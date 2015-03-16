@@ -14,11 +14,10 @@ elseif(UNIX)
 endif ()
 
 #set(fkv_SRC fkv.c)
-#set(alloc_SRC alloc.c)
+set(mem_alloc_SRC mem_alloc.c)
 set(test_mem_alloc_SRC test_mem_alloc.c)
 
 #add_executable(fkv ${fkv_SRC})
 add_executable(test_mem_alloc ${test_mem_alloc_SRC})
-
-#add_library(alloc ${alloc_SRC})
-#target_link_libraries()
+add_library(mem_alloc ${mem_alloc_SRC})
+target_link_libraries(test_mem_alloc mem_alloc)
