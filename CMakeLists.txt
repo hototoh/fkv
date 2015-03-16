@@ -18,7 +18,13 @@ endif ()
 set(mem_alloc_SRC mem_alloc.c)
 set(test_mem_alloc_SRC test_mem_alloc.c)
 
+set(circular_log_SRC circular_log.c)
+set(test_circular_log_SRC test_circular_log.c)
+
 #add_executable(fkv ${fkv_SRC})
 add_executable(test_mem_alloc ${test_mem_alloc_SRC})
+add_executable(test_circular_log ${test_circular_log_SRC})
 add_library(mem_alloc ${mem_alloc_SRC})
+add_library(circular_log ${circular_log_SRC})
 target_link_libraries(test_mem_alloc mem_alloc)
+target_link_libraries(test_circular_log circular_log mem_alloc)
