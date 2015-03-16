@@ -33,7 +33,7 @@ create_mem_allocator(char* filename, uint64_t _mem_size) {
     D("Fail to mmap file.");
     goto error1;
   }
-  print_addr(addr, "mmaped address");
+  print_addr(addr, "mmapped address");
   
   mem_allocator* allocator;
   allocator = (mem_allocator*) malloc(sizeof(mem_allocator));
@@ -44,6 +44,7 @@ create_mem_allocator(char* filename, uint64_t _mem_size) {
 
   allocator->fd = fd;
   allocator->size = mem_size;
+  allocator->addr = addr;
   strcpy(allocator->filename, filename);
   return allocator;
 error2:

@@ -14,25 +14,30 @@
 
 void write_data(mem_allocator* allocator) {
   uint64_t size = allocator->size;
-  char* addr = allocator->addr;
+  uint8_t* addr = (uint8_t*) allocator->addr;
   for(uint64_t i = 0; i < size; i++) {
-    addr[i] = i;
+    //D("%d = %d", *(addr+i), (int) (i & 0xff));
+    *(addr+i) = (i & 0xff);
   }
 }
 
 
 void check_data(mem_allocator* allocator) {
   uint64_t size = allocator->size;
-  char* addr = allocator->addr;
+  uint8_t* addr = (uint8_t*) allocator->addr;
   for(uint64_t i = 0; i < size; i++) {
-    assert(addr[i] == i);
+    //D("%d == %d !?", *(addr+i), (int) (i & 0xff));
+    assert(*(addr+i) == (i & 0xff));
   }
 }   
 
 int main() {
   mem_allocator* allocator = create_mem_allocator(FILENAME, MM_SIZE);
+  if (allocator == NULL) {
+    D("fail to create memory allocator.");
+    exit(1);
+  }
   write_data(allocator);
-  sleep(10);
   check_data(allocator);
   destroy_mem_allocator(allocator);
   return 0;
