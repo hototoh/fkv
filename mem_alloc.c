@@ -18,7 +18,8 @@
 #define MM_FLAGS (MAP_SHARED)
 
 mem_allocator*
-create_mem_allocator(char* filename, uint64_t _mem_size) {
+create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
+{
   int fd;
   fd = open(filename, O_CREAT | O_RDWR, 0755);
   if (fd < 0) {
@@ -28,7 +29,7 @@ create_mem_allocator(char* filename, uint64_t _mem_size) {
 
   // XXX mem_size must be multiples of 2MiB
   uint64_t mem_size = _mem_size;  
-  void* addr = mmap(NULL, mem_size, MM_PROTECTION, MM_FLAGS, fd, 0);
+  void* addr = mmap(_addr, mem_size, MM_PROTECTION, MM_FLAGS, fd, 0);
   if(addr == MAP_FAILED) {
     D("Fail to mmap file.");
     goto error1;
