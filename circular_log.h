@@ -6,8 +6,8 @@
 
 #include "mem_alloc.h"
 
-#define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/huge/circular_log"
-#define CIRCULAR_LOG_SIZE 1ULL << 30
+#define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
+#define CIRCULAR_LOG_SIZE 1ULL << 29
 
 typedef struct index_entry {
   /* value 0 means empty */ 

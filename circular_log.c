@@ -174,7 +174,8 @@ create_circular_log(char* filename, uint64_t log_mem_size)
   memset(log_table, 0, sizeof(circular_log));
 
   mem_allocator* allocator;
-  allocator = create_mem_allocator_with_addr(filename, log_mem_size, 0x0UL);
+  allocator = create_mem_allocator_with_addr(filename, log_mem_size,
+                                             (void*)0x0UL);
   if (allocator == NULL) goto error1;
 
   log_table->allocator = allocator;
