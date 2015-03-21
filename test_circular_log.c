@@ -6,13 +6,18 @@
 #include <assert.h>
 
 #include "common.h"
+#include "util.h"
 #include "circular_log.h"
 
 #define LOG_MEM_SIZE (1UL << 29) // 1GB
 #define LOG_FILE_NAME ("/mnt/hugetlbfs/test_circular_log")
 #define BUCKET_SIZE 1024
 
-void test_circular_log() {
+#define ITER_NUM 1024
+#define MAX_DATA_SIZE 1024
+
+void test_circular_log()
+{
   circular_log* log_table;
   log_table = create_circular_log(LOG_FILE_NAME,
                                   LOG_MEM_SIZE);
@@ -25,7 +30,47 @@ void test_circular_log() {
   destroy_circular_log(log_table);
 }
 
-void test_kv_table(uint64_t bucket_size) {
+/** 
+ * C: Constant
+ * V: Variable
+ * K: Key
+ * V: Value
+ */
+void test_kv_put_CKCV(kv_table* table, circular_log_entry *entries,
+                      uint32_t key_length, uint32_t val_length)
+{
+  for(int i = 0; i < ITER_NUM; i++) {
+    circular_log_entry *entry = &entries[i];
+    entry->key_length = key_length;    
+    rand_string(entry->data, key_length);
+    entry->val_length = val_length;
+    rand_string(entry->data+key_length, val_length);
+    entry->keyhash = ;
+    put_kv_table(table, entry);
+  }
+}
+
+void test_kv_get(kv_table* table, circular_log_entry *entries)
+{
+  for(int i = 0; i < ITER_NUM; i++) {
+    circular_log_entry entry;
+    uint64_t key_length = entry->key_length;
+    strncpy(entry.data, entries.data, key_length);
+    //entry.hashkey
+    get_kv_table(table, &entry);
+    bool ret = equal_circular_log_entry(&entries[i], &entry);
+    if(!ret)
+      print_circular_log_entry(&entry);
+  }
+}
+
+void test_kv_table(uint64_t bucket_size)
+{
+  circular_log_entry *entries;
+  entries = (circular_log_entry*) calloc(ITER_NUM, 
+                                         sizeof(circular_log_entry) +
+                                         sizeof(uint8_t) * MAX_DATA_SIZE);
+                                
   kv_table *table = create_kv_table(bucket_size, NULL);
   if (table == NULL) {
     D("Fail to create kv_table");
@@ -38,6 +83,9 @@ void test_kv_table(uint64_t bucket_size) {
   D("bucket_size: %ld", (uint64_t) table->bucket_size);
   D("bucket: %lx", (uint64_t) table->buckets);  
 
+  uint32_t key_length = 10, val_length = 10;
+  test_kv_put_CKCV(table, entries, key_length, val_length);
+  test_kv_get(table, entries);
   destroy_kv_table(table);
   D("SUCESS to destroy kv_table");
 }
