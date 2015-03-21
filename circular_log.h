@@ -87,5 +87,19 @@ typedef struct kv_table {
   bucket buckets[0];
 } kv_table;
 
+kv_table*
+create_kv_table(uint64_t bucket_size, circular_log* log);
+
+void
+destroy_kv_table(kv_table* table);
+
+bool
+put_kv_table(kv_table* table, circular_log_entry* entry);
+
+bool
+get_kv_table(kv_table* table, circular_log_entry* entry);
+
+bool
+delete_kv_table(kv_table* table, circular_log_entry* entry);
 
 #endif

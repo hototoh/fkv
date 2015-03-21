@@ -16,7 +16,10 @@ static inline bool
 is_empty_entry(index_entry* entry);
 
 static inline bool
-    match_index_entry_tag(uint64_t tag, uint64_t keyhash);
+match_index_entry_tag(uint64_t tag, uint64_t keyhash);
+
+static inline bool
+insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset);
 
 /***** circular_log_entry *****/
 static inline bool
@@ -37,6 +40,10 @@ static inline uint64_t
 lookup_keys_tag_hash_portion(uint64_t keyhash);
 
 /***** circular_log *****/
+static inline bool
+__get_circular_log_entry(circular_log* log_table, bucket* bucket, 
+                         circular_log_entry* entry);
+
 static inline void
 delete_first_circular_log_entry(circular_log* log_table);
 
@@ -69,15 +76,7 @@ match_index_entry_tag(uint64_t tag, uint64_t keyhash)
   return !(tag ^ bucket_index_tag((index_entry*) keyhash));
 }
 
-bool
-insert_index_entry_at(bucket* bucket, index_entry entry, int at)
-{
-  index_entry* entries = bucket->entries;
-  entries[at] = entry;
-  return true;
-}
-
-bool
+static inline bool
 insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset)
 {
   index_entry entry = {
