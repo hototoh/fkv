@@ -15,6 +15,15 @@
           __FUNCTION__, __LINE__, ##__VA_ARGS__); \
   } while (0)
 
+static inline void print_addr(void* addr, char* var) {
+  printf("addr: 0b");
+  for(int i = 0; i < 64; i++) {
+    uint64_t _addr = (uint64_t) addr >> i;
+    printf("%1d", (int) _addr & 1);
+  }
+  printf(" : %s\n", var);
+}
+
 #endif
 
 #endif
