@@ -23,10 +23,6 @@ insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset);
 
 /***** circular_log_entry *****/
 static inline bool
-equal_circular_log_entry_key(circular_log_entry* entry1, 
-                             circular_log_entry* entry2);
-
-static inline bool
 match_circular_log_entry_key(circular_log_entry* entry1, 
                              uint64_t addr, uint64_t offset);
 
@@ -96,14 +92,6 @@ insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset)
 }
 
 /***** circular_log_entry *****/
-static inline bool
-equal_circular_log_entry_key(circular_log_entry* entry1, 
-                            circular_log_entry* entry2)
-{
-  return (entry1->key_length == entry2->key_length &&
-          memcmp(entry1, entry2, entry1->key_length) == 0);
-}
-
 static inline bool
 match_circular_log_entry_key(circular_log_entry* entry1, 
                              uint64_t addr, uint64_t offset)
