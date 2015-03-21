@@ -9,7 +9,7 @@
 #include "common.h"
 #include "mem_alloc.h"
 
-#define FILENAME "/mnt/hugetlbfs/huge/test"
+#define FILENAME "/mnt/hugetlbfs/test_mem_alloc"
 #define MM_SIZE (256UL*1024*1024)
 
 void write_data(mem_allocator* allocator) {
@@ -32,13 +32,24 @@ void check_data(mem_allocator* allocator) {
 }   
 
 int main() {
-  mem_allocator* allocator = create_mem_allocator(FILENAME, MM_SIZE);
-  if (allocator == NULL) {
-    D("fail to create memory allocator.");
-    exit(1);
+  for (int i = 0; i < 3; i++) {
+    mem_allocator* allocator;
+    if( i == 0 ) 
+      allocator = create_mem_allocator(FILENAME, MM_SIZE);
+    else if (i == 1)
+      allocator = create_mem_allocator_with_addr(FILENAME, MM_SIZE, NULL);
+    else
+      allocator = create_mem_allocator_with_addr(FILENAME, MM_SIZE, 
+                                                 (void*)0x0UL);
+
+    if (allocator == NULL) {
+      D("fail to create memory allocator.");
+      exit(1);
+    }
+    write_data(allocator);
+    check_data(allocator);
+    destroy_mem_allocator(allocator);
+    D("%d:fin.", i);
   }
-  write_data(allocator);
-  check_data(allocator);
-  destroy_mem_allocator(allocator);
   return 0;
 }
