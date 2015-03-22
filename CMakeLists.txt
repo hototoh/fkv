@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.4)
 project(fkv)
 
 add_definitions(-pthread)
-add_definitions(-g -Wall -Wconversion)
+add_definitions(-g -Wall -Wconversion -Woverflow)
 add_definitions(-O3)
 add_definitions(-msse4.2)
 #add_definitions(-march=corei7)

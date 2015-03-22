@@ -105,21 +105,21 @@ match_circular_log_entry_key(circular_log_entry* entry1,
 static inline uint64_t
 rss_queue_hash_portion(uint64_t keyhash)
 {
-  return (keyhash >> 48) & 0xffff;
+  return (keyhash >> 48) & 0xffffUL;
 }
 
 // 32bit
 static inline uint64_t
 bucket_hash_portion(uint64_t keyhash)
 {
-  return (keyhash >> 16) & 0xffffffff;
+  return (keyhash >> 16) & 0xffffffffUL;
 }
 
 // 16bit
 static inline uint64_t
 lookup_keys_tag_hash_portion(uint64_t keyhash)
 {
-  return keyhash & 0xffff;
+  return keyhash & 0xffffUL;
 }
 
 /***** circular_log *****/

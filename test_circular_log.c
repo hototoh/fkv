@@ -6,6 +6,7 @@
 #include <assert.h>
 
 #include "common.h"
+#include "city.h"
 #include "util.h"
 #include "circular_log.h"
 
@@ -42,21 +43,33 @@ void test_kv_put_CKCV(kv_table* table, circular_log_entry *entries,
   for(int i = 0; i < ITER_NUM; i++) {
     circular_log_entry *entry = &entries[i];
     entry->key_length = key_length;    
-    rand_string(entry->data, key_length);
+    rand_string((char*)entry->data, key_length);
     entry->val_length = val_length;
-    rand_string(entry->data+key_length, val_length);
-    entry->keyhash = ;
+    rand_string((char*)entry->data+key_length, val_length);
+    entry->keyhash = CityHash64((char*)entry->data, key_length);
     put_kv_table(table, entry);
   }
 }
+
+void test_kv_put_CKVV(kv_table* table, circular_log_entry *entries,
+                      uint32_t key_length)
+{}
+
+void test_kv_put_VKCV(kv_table* table, circular_log_entry *entries,
+                      uint32_t val_length)
+{}
+
+void test_kv_put_VKVV(kv_table* table, circular_log_entry *entries)
+{}
 
 void test_kv_get(kv_table* table, circular_log_entry *entries)
 {
   for(int i = 0; i < ITER_NUM; i++) {
     circular_log_entry entry;
-    uint64_t key_length = entry->key_length;
-    strncpy(entry.data, entries.data, key_length);
-    //entry.hashkey
+    circular_log_entry* _entry = &entries[i];
+    uint64_t key_length = _entry->key_length;
+    memcpy((char*)entry.data, _entry->data, key_length);
+    entry.keyhash = CityHash64((char*)entry.data, key_length);
     get_kv_table(table, &entry);
     bool ret = equal_circular_log_entry(&entries[i], &entry);
     if(!ret)

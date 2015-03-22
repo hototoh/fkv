@@ -69,20 +69,20 @@ equal_circular_log_entry(circular_log_entry* entry1,
   uint64_t data1_length = entry1->key_length + entry1->val_length;
   uint64_t data2_length = entry2->key_length + entry2->val_length;
   return (data1_length == data2_length && 
-          memcmp(entry1, entry2, data_length));
+          memcmp(entry1, entry2, data1_length));
 }
 
 static void
 print_circular_log_entry(circular_log_entry* entry)
 {
   char key[1024], val[1024];
-  strncpy(key, entry->data, entry->key_length);
-  strncpy(val, entry->data+entry->key_length, entry->val_length);
+  memcpy(key, entry->data, entry->key_length);
+  memcpy(val, entry->data+entry->key_length, entry->val_length);
   printf("**** entry ****\n"
-         "initial_size:%lld\n"
-         "keyhash     :%lld\n"
-         "key_length  :%ld\n"
-         "val_length  :%ld\n"
+         "initial_size:%lu\n"
+         "keyhash     :%lu\n"
+         "key_length  :%u\n"
+         "val_length  :%u\n"
          "key         :%s\n"
          "val         :%s\n",
          entry->initial_size, entry->keyhash, entry->key_length,
