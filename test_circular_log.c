@@ -43,6 +43,17 @@ void test_circular_log()
   D("addr: %lx", (uint64_t) log_table->allocator->addr);
   destroy_circular_log(log_table);
 }
+
+static inline circular_log_entry*
+next_circular_log_entry(circular_log_entry* base, int index)
+{
+  circular_log_entry* entry;
+  entry = (circular_log_entry*) ((uint64_t) base + (uint64_t) (index * (
+        sizeof(circular_log_entry) +
+        sizeof(uint8_t) * MAX_DATA_SIZE)));
+  return entry;
+}
+
 /** 
  * C: Constant
  * V: Variable
@@ -54,9 +65,8 @@ void test_kv_put_CKCV(kv_table* table, circular_log_entry *entries,
 {
   D("START of put CKCV");
   for(int i = 0; i < ITER_NUM; i++) {
-    circular_log_entry *entry = (circular_log_entry*) ((uint64_t) entries +
-                                i * (sizeof(circular_log_entry) +
-                                     sizeof(uint8_t) * MAX_DATA_SIZE));
+    circular_log_entry *entry;
+    entry = next_circular_log_entry(entries, i);
     entry->key_length = key_length;
     rand_string((char*)entry->data, key_length);
     entry->val_length = val_length;
@@ -89,13 +99,11 @@ void test_kv_get(kv_table* table, circular_log_entry *entries)
     circular_log_entry* entry;
     get_entry = (circular_log_entry*) malloc(sizeof(circular_log_entry) +
                                              sizeof(uint8_t) * MAX_DATA_SIZE);
-    entry = (circular_log_entry*) ((uint64_t) entries +
-                                   i * (sizeof(circular_log_entry) +
-                                        sizeof(uint8_t) * MAX_DATA_SIZE));    
+    entry = next_circular_log_entry(entries, i);
     // copy the key and other necessary information for GET
-    uint64_t key_length = entry->key_length;
+    uint32_t key_length = entry->key_length;
     memcpy((void*) get_entry->data, entry->data, key_length);    
-    get_entry->key_length = key_length;
+    get_entry->key_length = (uint32_t) key_length;
     get_entry->keyhash = CityHash64((char*)get_entry->data, key_length);
     get_kv_table(table, get_entry);
     

@@ -220,7 +220,6 @@ put_circular_log_entry(circular_log* log_table, bucket* bucket,
     D("initial_size: %lu", entry->initial_size);
     D("empty_size: %lu", empty_size(log_table));
     delete_first_circular_log_entry(log_table);
-    sleep(1);
   }
   
   //D("tail:%lu base:%lu", log_table->tail, log_table->addr);
