@@ -9,9 +9,6 @@
 #include "circular_log.h"
 
 /***** bucket *****/
-//static inline uint64_t 
-//bucket_index_tag(index_entry* keyhash);
-
 static inline bool
 is_empty_entry(index_entry* entry);
 
@@ -55,15 +52,6 @@ static inline bucket*
 get_entry_bucket(kv_table* table, circular_log_entry* entry);
 
 /***** bucket *****/
-
-/* static inline uint64_t  */
-/* bucket_index_tag(uint64_t keyhash) */
-/* { */
-/*   index_entry entry; */
-/*   entry.tag = lookup_keys_tag_hash_portion(keyhash); */
-/*   return entry->tag; */
-/* } */
-
 static inline bool 
 is_empty_entry(index_entry* entry)
 {
@@ -73,7 +61,6 @@ is_empty_entry(index_entry* entry)
 static inline bool
 match_index_entry_tag(uint64_t tag, uint64_t keyhash)
 {
-  D("%lu == %lu", tag, lookup_keys_tag_hash_portion(keyhash));
   return !(tag ^ lookup_keys_tag_hash_portion(keyhash));
 }
 
@@ -82,10 +69,9 @@ insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset,
                    int free_index)
 {
   index_entry entry = {
-    .tag = lookup_keys_tag_hash_portion(keyhash),
+    .tag = (uint16_t) lookup_keys_tag_hash_portion(keyhash),
     .offset = offset,
   };
-
   if (free_index >= 0) {
     bucket->entries[free_index] = entry;
     return true;
@@ -137,7 +123,6 @@ delete_index_entry(bucket* bucket, index_entry entry)
 static inline void
 delete_first_circular_log_entry(circular_log* log_table)
 {
-  sleep(1);
   D("delete_first_circular_log_entry is not implemented yet");
 }
 
@@ -206,7 +191,7 @@ put_circular_log_entry(circular_log* log_table, bucket* bucket,
     tmp = bucket->entries[i];
     
     // get the minimum free index of entry.
-    if (!is_empty_entry(&tmp)){ 
+    if (is_empty_entry(&tmp)){ 
       if(free_index < 0)        
         free_index = i;
       continue;
@@ -260,7 +245,6 @@ __get_circular_log_entry(circular_log* log_table, bucket* bucket,
   for(int i = 0; i < BUCKET_ENTRY_SIZE; i++) {
     tmp = bucket->entries[i];
     if (match_index_entry_tag(tmp.tag, entry->keyhash)) {
-      D("here");
       if (!match_circular_log_entry_key(entry, log_table->addr, tmp.offset)) {
         D("doesn' match");
         continue;
@@ -269,16 +253,9 @@ __get_circular_log_entry(circular_log* log_table, bucket* bucket,
       circular_log_entry* _entry;
       _entry = (circular_log_entry*) (((uint64_t)log_table->addr) + tmp.offset);
       memcpy(entry, _entry, _entry->initial_size);
-      D("hogehgoehgoehgoheoghe");
-      print_circular_log_entry(entry);
-      print_circular_log_entry(_entry);
       return true;
-    } else {
-      D("tag : %u", tmp.tag);
-      D("doesn't match key");
-    }
+    } 
   }
-  print_circular_log_entry(entry);
   D("404: NOT FOUND ");
   return false;
 }
@@ -315,7 +292,6 @@ get_entry_bucket(kv_table* table, circular_log_entry* entry)
 {
   uint64_t bucket_mask = table->bucket_size - 1;
   uint64_t index = bucket_hash_portion(entry->keyhash) & bucket_mask;
-  D("index: %lu", index);
   return &table->buckets[index];
 }
 

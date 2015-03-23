@@ -76,8 +76,9 @@ static void
 print_circular_log_entry(circular_log_entry* entry)
 {
   char key[1024], val[1024];
+  uint64_t val_start = (uint64_t) entry->data + entry->key_length;
   memcpy(key, entry->data, entry->key_length);
-  memcpy(val, (uint64_t) entry->data + entry->key_length, entry->val_length);
+  memcpy(val, (void*) val_start, entry->val_length);
   printf("**** entry ****\n"
          "initial_size:%lu\n"
          "keyhash     :%lu\n"

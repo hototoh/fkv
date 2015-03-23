@@ -12,21 +12,23 @@
 
 #define LOG_MEM_SIZE (1UL << 30) // 512MB
 #define LOG_FILE_NAME ("/mnt/hugetlbfs/test_circular_log")
-#define BUCKET_SIZE 10
+#define BUCKET_SIZE 14
 
-#define ITER_NUM 64
+#define ITER_NUM 102400
 #define MAX_DATA_SIZE 1024
 
-void test_index_entry()
-{
-  for(int i = 0; i < ITER_NUM; i++) {
-    uint64_t index = 0xf0001UL;
-    index_entry* entry = (index_entry*) &index;
-    D("tag: %lu, offset, %Lu", entry->tag, entry->offset);
-    entry->tag = i;
-    D("tag: %lu, offset, %Lu", entry->tag, entry->offset);
-  }
-}
+unsigned int miss_count = 0;;
+
+/* void test_index_entry() */
+/* { */
+/*   for(int i = 0; i < ITER_NUM; i++) { */
+/*     uint64_t index = 0xf0001UL; */
+/*     index_entry* entry = (index_entry*) &index; */
+/*     D("tag: %lu, offset, %Lu", entry->tag, entry->offset); */
+/*     entry->tag = i; */
+/*     D("tag: %lu, offset, %Lu", entry->tag, entry->offset); */
+/*   } */
+/* } */
 
 void test_circular_log()
 {
@@ -60,7 +62,7 @@ void test_kv_put_CKCV(kv_table* table, circular_log_entry *entries,
     entry->val_length = val_length;
     rand_string((char*)entry->data+key_length, val_length);
     entry->keyhash = CityHash64((char*)entry->data, key_length);
-    D("#%d data:%s, hash:%lu", i, entry->data, entry->keyhash);
+    //D("#%d data:%s, hash:%lu", i, entry->data, entry->keyhash);
     entry->initial_size = sizeof(circular_log_entry) + entry->key_length
                           + entry->val_length;
     put_kv_table(table, entry);
@@ -78,7 +80,6 @@ void test_kv_put_VKCV(kv_table* table, circular_log_entry *entries,
 
 void test_kv_put_VKVV(kv_table* table, circular_log_entry *entries)
 {}
-int j;
 
 void test_kv_get(kv_table* table, circular_log_entry *entries)
 {
@@ -98,17 +99,10 @@ void test_kv_get(kv_table* table, circular_log_entry *entries)
     get_entry->keyhash = CityHash64((char*)get_entry->data, key_length);
     get_kv_table(table, get_entry);
     
-    if( i == 0 ) {
-      print_circular_log_entry(entry);
-      print_circular_log_entry(get_entry);
-    }
-
     bool ret = equal_circular_log_entry(entry, get_entry);
     if(!ret) {
-      D("NOT exists****************************************");
-      j++;
-      print_circular_log_entry(entry);
-      print_circular_log_entry(get_entry);
+      D("");
+      miss_count++;
     }
   }
   D("END of get");
@@ -152,6 +146,6 @@ main(int argc, char** argv)
   test_circular_log();
   D("TEST key-value table");
   test_kv_table(BUCKET_SIZE);  
-  D("%d", j);
+  D("misscount: %u / %u", miss_count, ITER_NUM);
   return 0;
 }
