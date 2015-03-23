@@ -23,8 +23,8 @@ typedef struct bucket {
 
 #define OPTIMISTIC_LOCK(v, vv, x)                                       \
   do {                                                                  \
-    v = x->version & (~0x1ULL);                                         \
-    vv = version | 0x1ULL;                                              \
+    v = x->version & (~0x1UL);                                          \
+    vv = version | 0x1UL;                                               \
   } while(__sync_bool_compare_and_swap(&x->version, v, vv));
 
 #define OPTIMISTIC_UNLOCK(x)                    \
@@ -59,7 +59,7 @@ equal_circular_log_entry_key(circular_log_entry* entry1,
                             circular_log_entry* entry2)
 {
   return (entry1->key_length == entry2->key_length &&
-          memcmp(entry1, entry2, entry1->key_length) == 0);
+          memcmp(entry1->data, entry2->data, entry1->key_length) == 0);
 }
 
 static inline bool
@@ -69,7 +69,7 @@ equal_circular_log_entry(circular_log_entry* entry1,
   uint64_t data1_length = entry1->key_length + entry1->val_length;
   uint64_t data2_length = entry2->key_length + entry2->val_length;
   return (data1_length == data2_length && 
-          memcmp(entry1, entry2, data1_length));
+          memcmp(entry1->data, entry2->data, data1_length) == 0);
 }
 
 static void
@@ -77,7 +77,7 @@ print_circular_log_entry(circular_log_entry* entry)
 {
   char key[1024], val[1024];
   memcpy(key, entry->data, entry->key_length);
-  memcpy(val, entry->data+entry->key_length, entry->val_length);
+  memcpy(val, (uint64_t) entry->data + entry->key_length, entry->val_length);
   printf("**** entry ****\n"
          "initial_size:%lu\n"
          "keyhash     :%lu\n"
@@ -118,12 +118,13 @@ remove_circular_log_entry(circular_log* log_table, bucket* bucket,
 
 typedef struct kv_table {
   circular_log* log;
+  uint8_t bucket_bits;
   uint64_t bucket_size;
   bucket buckets[0];
 } kv_table;
 
 kv_table*
-create_kv_table(uint64_t bucket_size, circular_log* log);
+create_kv_table(uint8_t bucket_bits, circular_log* log);
 
 void
 destroy_kv_table(kv_table* table);
