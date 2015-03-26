@@ -17,7 +17,7 @@ typedef struct mem_allocator {
 #define DEL_mem_allocator destroy_mem_allocator
 
 mem_allocator*
-create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr);
+create_mem_allocator_with_addr(char* filename, uint64_t mem_size, void* addr);
 
 static mem_allocator*
 create_mem_allocator(char* filename, uint64_t mem_size)

@@ -18,15 +18,18 @@ static void hugepage_path(char* path, char* file)
 mem_allocator*
 create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
 {
+  char path[PATH_MAX];
+  hugepage_path(path, filename);
+
   int fd;
-  fd = open(filename, O_CREAT | O_RDWR, 0755);
+  fd = open(path, O_CREAT | O_RDWR, 0755);
   if (fd < 0) {
     D("Fail to open %s", filename);
     goto error0;
   }
 
   // XXX mem_size must be multiples of 2MiB
-  uint64_t mem_size = _mem_size;  
+  uint64_t mem_size = _mem_size;
   void* addr = mmap(_addr, mem_size, MM_PROTECTION, MM_FLAGS, fd, 0);
   if(addr == MAP_FAILED) {
     D("Fail to mmap file.");
@@ -44,7 +47,7 @@ create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
   allocator->fd = fd;
   allocator->size = mem_size;
   allocator->addr = addr;
-  strcpy(allocator->filename, filename);
+  strncpy(allocator->filename, path, PATH_MAX);
   return allocator;
 error2:
   munmap(addr, mem_size);
