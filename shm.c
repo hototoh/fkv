@@ -3,8 +3,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <limits.h> // PATH_MAX
+#include <unistd.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <sys/mman.h>
+#include <linux/limits.h> // PATH_MAX
 
+#include "common.h"
 #include "shm.h"
 
 #define MM_PROTECTION (PROT_READ | PROT_WRITE)

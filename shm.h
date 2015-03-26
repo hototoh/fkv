@@ -1,7 +1,8 @@
 #ifndef SHM_H
 #define SHM_H
 
-#include <limits.h> // PATH_MAX
+#include <limits.h> 
+#include <linux/limits.h> // PATH_MAX
 #include <stdlib.h> 
 
 #define HUGEPAGE_PREFIX "/mnt/hugetlbfs"

@@ -11,10 +11,10 @@
 
 // 16bit
 static inline uint64_t
-lookup_keys_tag_hash_portion(uint64_t keyhash)
+lookup_key_tag_hash_portion(uint64_t keyhash)
 {
   uint64_t tag = keyhash & 0xffffUL;
-  return tag == 0 ? ~tag : tag;
+  return tag == 0UL ? 0xffffUL : tag;
 }
 
 // 32bit
@@ -40,15 +40,26 @@ is_empty_entry(index_entry* entry)
 static inline bool
 match_index_entry_tag(uint64_t tag, uint64_t keyhash)
 {
-  uint64_t tag1 = lookup_keys_tag_hash_portion(keyhash); 
+  uint64_t tag1 = lookup_key_tag_hash_portion(keyhash); 
   return !(tag ^ tag1);
 }
 
 static inline bool
-match_index_entry(index_entry *entry, uint64_t keyhash,
-                  uint64_t offset);
+match_index_entry(index_entry *entry, uint64_t keyhash, uint64_t offset)
+{
+  return match_index_entry_tag((uint64_t) entry->tag, keyhash) &&
+      (entry->offset == offset);
+}
+
+static inline void
+print_index_entry(index_entry *entry)
+{
+  if(!is_empty_entry(entry))
+    printf("%u, %lx\n", entry->tag, entry->offset);
+}
 
 #define BUCKET_ENTRY_SIZE 15
+
 // 128 (8 x 16) byte
 typedef struct bucket {
   // during updating a bucket entry, keep version odd.
@@ -61,12 +72,8 @@ typedef struct bucket {
     uint32_t offset;
     uint32_t cur;
   };
-
   index_entry entries[BUCKET_ENTRY_SIZE];
 }__attribute__((aligned(128))) bucket;
-bool
-insert_index_entry(bucket* bucket, uint64_t keyhash,
-                   uint64_t offset, int free_index);
 
 /** XXX
  * Now we don't care the regression pattern.
@@ -81,5 +88,25 @@ typedef struct bucket_pool {
   bucket* mains;
   bucket* spares;
 } bucket_pool;
+
+bucket_pool*
+create_bucket_pool(char* file, uint32_t main_size, uint32_t spare_size);
+
+void
+destroy_bucket_pool(bucket_pool* bkt_pool);
+
+index_entry*
+search_index_entry(bucket** _bucket, uint64_t keyhash, int* index);
+
+void
+delete_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
+                   uint64_t offset);
+
+bool
+insert_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
+                   uint64_t offset);
+
+void
+dump_bucket(bucket* bkt);
 
 #endif
