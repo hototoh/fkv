@@ -5,19 +5,10 @@
 #include <stdbool.h>
 
 #include "common.h"
-#include "mem_alloc.h"
+#include "shm.h"
+#include "bucket.h"
 #include "circular_log.h"
 
-/***** bucket *****/
-static inline bool
-is_empty_entry(index_entry* entry);
-
-static inline bool
-match_index_entry_tag(uint64_t tag, uint64_t keyhash);
-
-static inline bool
-insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset,
-                   int free_index);
 
 /***** circular_log_entry *****/
 static inline bool
@@ -26,12 +17,6 @@ match_circular_log_entry_key(circular_log_entry* entry1,
 
 static inline uint64_t
 rss_queue_hash_portion(uint64_t keyhash);
-
-static inline uint64_t
-bucket_hash_portion(uint64_t keyhash);
-
-static inline uint64_t
-lookup_keys_tag_hash_portion(uint64_t keyhash);
 
 /***** circular_log *****/
 static inline bool
@@ -51,35 +36,6 @@ update_log_table_tail(circular_log* log_table, uint64_t offset);
 static inline bucket*
 get_entry_bucket(kv_table* table, circular_log_entry* entry);
 
-/***** bucket *****/
-static inline bool 
-is_empty_entry(index_entry* entry)
-{
-  return ! entry->tag;
-}
-
-static inline bool
-match_index_entry_tag(uint64_t tag, uint64_t keyhash)
-{
-  return !(tag ^ lookup_keys_tag_hash_portion(keyhash));
-}
-
-static inline bool
-insert_index_entry(bucket* bucket, uint64_t keyhash, uint64_t offset, 
-                   int free_index)
-{
-  index_entry entry = {
-    .tag = (uint16_t) lookup_keys_tag_hash_portion(keyhash),
-    .offset = offset,
-  };
-  if (free_index >= 0) {
-    bucket->entries[free_index] = entry;
-    return true;
-  }
-  // XXX 
-  return false;
-}
-
 /***** circular_log_entry *****/
 static inline bool
 match_circular_log_entry_key(circular_log_entry* entry1, 
@@ -95,20 +51,6 @@ static inline uint64_t
 rss_queue_hash_portion(uint64_t keyhash)
 {
   return (keyhash >> 48) & 0xffffUL;
-}
-
-// 32bit
-static inline uint64_t
-bucket_hash_portion(uint64_t keyhash)
-{
-  return (keyhash >> 16) & 0xffffffffUL;
-}
-
-// 16bit
-static inline uint64_t
-lookup_keys_tag_hash_portion(uint64_t keyhash)
-{
-  return keyhash & 0xffffUL;
 }
 
 /***** circular_log *****/
