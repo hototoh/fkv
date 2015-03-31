@@ -17,15 +17,10 @@ segregated_fits_insert_block_head(segregated_fits_head* head,
   uint32_t data_size = head->mem_size;
   uint32_t mem_size  = data_size + SEGREGATED_SIZE_SPACE;
   char* block_addr = (char*) block;
-  D("header addr: %lx", (char*) block_addr - 8);
-  D("segregated fits addr: %lx", (char*) block_addr);
-  D("footer addr: %lx", (char*) block_addr + data_size);
-  D("block addr: %lx", block);
-  D("mem_size: %u", mem_size);
   *((uint64_t*)((char*)block_addr - 8)) = mem_size & (~0U - 2);
   *((uint64_t*)((char*)block_addr + data_size)) = mem_size & (~0U - 2); 
-  block->next = head->head;
-  head->head = block;
+  block->next = head->head.next;
+  head->head.next = block;
 }
 
 static inline int
@@ -80,7 +75,7 @@ create_segregated_fits(uint32_t max_data_size)
     segregated_fits_head* head = &sfits->heads[i];
     head->mem_size = segregated_fits_class(i);
     head->version  = 0;
-    head->head = &head->head;
+    head->head.next = &head->head;
     D("index: %u, mem_size: %u, addr: %lx",
       i, head->mem_size, head);
   }
@@ -99,8 +94,8 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
                 (int) sfits->len - 1 : class_index;  
   mem_size = ((uint32_t)class_index +SEGREGATED_SIZE_SPACE_BITS+ 1)
              << DIFF_MAGIC;
-  D("index: %d, addr_ptr: %lx, size: %u, block_size: %u", 
-      class_index, addr, *size, mem_size);
+  //D("index: %d, addr_ptr: %lx, size: %u, block_size: %u", 
+  //class_index, addr, *size, mem_size);
 
   if (class_index < 0) { // size < 24
     assert(class_index >= -3);
@@ -135,8 +130,8 @@ static inline segregated_fits_list*
 __get_segregated_fits_block(segregated_fits_head* head)
 {
   // if (segregated_fits_is_empty(head)) return NULL;
-  segregated_fits_list* block = head->head;  
-  head->head = block->next;
+  segregated_fits_list* block = head->head.next;  
+  head->head.next = block->next;
   
   mask_allocated_flag(block);
   return block;
@@ -161,7 +156,6 @@ segregated_fits_divide(segregated_fits* sfits, int class_index)
     block_B = (segregated_fits_list *)(
         (char*) block + SEGREGATED_SIZE_SPACE +
         (segregated_fits_class(class_index)));
-    uint32_t block_B_size = segregated_fits_class(buddy_class_index);
 
     // divide block into block_A and block_B
     segregated_fits_head* head_A = &sfits->heads[class_index];
@@ -199,7 +193,7 @@ get_segregated_fits_block(segregated_fits* sfits, uint32_t data_size)
   }
 
   segregated_fits_list* block = __get_segregated_fits_block(head);
-  assert(block != head->head);
+  assert(block != head->head.next);
   return (void*) block;
 }
 
@@ -212,7 +206,7 @@ free_segregated_fits_block(segregated_fits* sfits, segregated_fits_list* block)
   // check the previous and next block to merge.
 
   int class_index = class_ceil_index((uint32_t) data_size);
-  if (class_index > sfits->len) return NULL;
+  if (class_index > sfits->len) return ;
 
   segregated_fits_head* head = &sfits->heads[class_index];
   segregated_fits_insert_block_head(head, block);
@@ -227,19 +221,18 @@ dump_segregated_fits_block(segregated_fits_head* head)
   uint32_t mem_size, block_size;
   mem_size = head->mem_size;
   block_size = head->mem_size + SEGREGATED_SIZE_SPACE;
-  /*
   printf("MemoryBlockSize: %u, AllocatedSize: %u,"
          "HeadAddress: %lx\n"
          "\t|\n",
          mem_size, block_size, (uint64_t) &head->head);
-  */
-  for(next = head->head; next != &head->head; next = next->next) {
+  
+  for(next = head->head.next; next != &head->head; next = next->next) {
     //uint64_t next_addr = (uint64_t) next, header_size, footer_size;
     uint64_t header_size, footer_size;
     char* next_addr = (char*) next;
     header_size = *(uint64_t*)(next_addr - 8);
     footer_size = *(uint64_t*)(next_addr + mem_size);
-    printf("\t|---0x%lx\n", next_addr - 8);
+    printf("\t|---0x%lx\n", (uint64_t)next_addr - 8);
     
     assert(block_size == header_size);
     assert(block_size == footer_size);

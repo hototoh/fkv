@@ -12,7 +12,7 @@ struct segregated_fits_list {
 
 /* if empty node, head point self */
 typedef struct segregated_fits_head { 
-  segregated_fits_list* head;
+  segregated_fits_list head;
   uint32_t mem_size;
   uint32_t version;
 } segregated_fits_head;
@@ -20,7 +20,7 @@ typedef struct segregated_fits_head {
 static inline bool
 segregated_fits_is_empty(segregated_fits_head* head)
 {
-  return head->head->next == head->head;
+  return head->head.next == &head->head;
 }
                                  
 typedef struct segregated_fits {
