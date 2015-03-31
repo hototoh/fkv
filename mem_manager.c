@@ -16,9 +16,14 @@ segregated_fits_insert_block_head(segregated_fits_head* head,
 {
   uint32_t data_size = head->mem_size;
   uint32_t mem_size  = data_size + SEGREGATED_SIZE_SPACE;
-  uint64_t block_addr = (uint64_t) block;
-  *((uint64_t*)(block_addr - 8)) = mem_size & (~0U - 2);
-  *((uint64_t*)(block_addr + data_size)) = mem_size & (~0U - 2); 
+  char* block_addr = (char*) block;
+  D("header addr: %lx", (char*) block_addr - 8);
+  D("segregated fits addr: %lx", (char*) block_addr);
+  D("footer addr: %lx", (char*) block_addr + data_size);
+  D("block addr: %lx", block);
+  D("mem_size: %u", mem_size);
+  *((uint64_t*)((char*)block_addr - 8)) = mem_size & (~0U - 2);
+  *((uint64_t*)((char*)block_addr + data_size)) = mem_size & (~0U - 2); 
   block->next = head->head;
   head->head = block;
 }
@@ -34,9 +39,10 @@ class_ceil_index(uint32_t size)
 static inline void
 mask_allocated_flag(segregated_fits_list* block)
 {
-  uint64_t mem_size = (uint64_t) block - BOUNDARY_TAG_SIZE;
-  *((uint64_t*)((uint64_t) block - BOUNDARY_TAG_SIZE)) 
-      = *((uint64_t*)((uint64_t) block - SEGREGATED_SIZE_SPACE + mem_size)) 
+  uint64_t mem_size;
+  mem_size = *(uint64_t*)((char*) block - BOUNDARY_TAG_SIZE) & (~0U - 2);
+  *((uint64_t*)((char*) block - BOUNDARY_TAG_SIZE)) 
+      = *((uint64_t*)((char*) block - SEGREGATED_SIZE_SPACE + mem_size)) 
       = mem_size | 1;
 }
 
@@ -125,6 +131,17 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
   return *size == 0 ? ENOMEM : 0;
 }
 
+static inline segregated_fits_list*
+__get_segregated_fits_block(segregated_fits_head* head)
+{
+  // if (segregated_fits_is_empty(head)) return NULL;
+  segregated_fits_list* block = head->head;  
+  head->head = block->next;
+  
+  mask_allocated_flag(block);
+  return block;
+}
+
 static inline bool
 segregated_fits_divide(segregated_fits* sfits, int class_index)
 {
@@ -138,11 +155,13 @@ segregated_fits_divide(segregated_fits* sfits, int class_index)
     assert(buddy_class_index >= -2);
     
     segregated_fits_list* block, *block_A, *block_B;
-    block = get_segregated_fits_block(sfits, (uint32_t) i << DIFF_MAGIC);
+    //block = get_segregated_fits_block(sfits, (uint32_t) i << DIFF_MAGIC);
+    block = __get_segregated_fits_block(head);
     block_A = block;
     block_B = (segregated_fits_list *)(
-        (uint64_t) block + SEGREGATED_SIZE_SPACE_BITS
-        +(segregated_fits_class(class_index)));
+        (char*) block + SEGREGATED_SIZE_SPACE +
+        (segregated_fits_class(class_index)));
+    uint32_t block_B_size = segregated_fits_class(buddy_class_index);
 
     // divide block into block_A and block_B
     segregated_fits_head* head_A = &sfits->heads[class_index];
@@ -150,28 +169,19 @@ segregated_fits_divide(segregated_fits* sfits, int class_index)
     if (buddy_class_index >= 0) {
       segregated_fits_head* head_B = &sfits->heads[buddy_class_index];
       segregated_fits_insert_block_head(head_B, block_B);
-    } else if(class_index == -2) { // 8 <= size < 16
+    } else if(buddy_class_index == -2) { // 8 <= size < 16
       mask_free_8_block((void*) block_B);
-    } else if(class_index == -1) { // 16 <= size < 24
+    } else if(buddy_class_index == -1) { // 16 <= size < 24
       mask_free_16_block((void*) block_B);
     } else {
+      D("buddy_class_index : %d", buddy_class_index);
       assert(false);
     }
+    // join the next block with block_B
     return true;
   }
   return false;
 }
-
-static inline segregated_fits_list*
-__get_segregated_fits_block(segregated_fits_head* head)
-{
-  // if (segregated_fits_is_empty(head)) return NULL;
-  segregated_fits_list* block = head->head->next;  
-  head->head->next = block->next;
-  mask_allocated_flag(block);
-  return block;
-}
-
 
 /* return the address of data portion */
 void*
@@ -181,9 +191,12 @@ get_segregated_fits_block(segregated_fits* sfits, uint32_t data_size)
   if (class_index > sfits->len) return NULL;
 
   segregated_fits_head* head = &sfits->heads[class_index];
-  if (!segregated_fits_is_empty(head))
-    if(!segregated_fits_divide(sfits, class_index))
+  if (segregated_fits_is_empty(head)) {
+    if(!segregated_fits_divide(sfits, class_index)) {
+      D("###################################");
       return NULL;
+    }
+  }
 
   segregated_fits_list* block = __get_segregated_fits_block(head);
   assert(block != head->head);
@@ -214,19 +227,24 @@ dump_segregated_fits_block(segregated_fits_head* head)
   uint32_t mem_size, block_size;
   mem_size = head->mem_size;
   block_size = head->mem_size + SEGREGATED_SIZE_SPACE;
+  /*
   printf("MemoryBlockSize: %u, AllocatedSize: %u,"
          "HeadAddress: %lx\n"
          "\t|\n",
          mem_size, block_size, (uint64_t) &head->head);
+  */
   for(next = head->head; next != &head->head; next = next->next) {
-    uint64_t next_addr = (uint64_t) next, header_size, footer_size;
+    //uint64_t next_addr = (uint64_t) next, header_size, footer_size;
+    uint64_t header_size, footer_size;
+    char* next_addr = (char*) next;
     header_size = *(uint64_t*)(next_addr - 8);
     footer_size = *(uint64_t*)(next_addr + mem_size);
-    printf("\t|---%lx\n", next_addr - 8);
+    printf("\t|---0x%lx\n", next_addr - 8);
     
     assert(block_size == header_size);
     assert(block_size == footer_size);
   }
+  D("fi.");
 }
 
 void
