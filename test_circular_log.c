@@ -8,6 +8,7 @@
 #include "common.h"
 #include "city.h"
 #include "util.h"
+#include "bucket.h"
 #include "circular_log.h"
 
 #define LOG_MEM_SIZE (1UL << 30) // 512MB

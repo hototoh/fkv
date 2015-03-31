@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 #include "shm.h"
+#include "bucket.h"
 
 #define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
 #define CIRCULAR_LOG_SIZE 1ULL << 29
