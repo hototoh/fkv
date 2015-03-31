@@ -17,16 +17,10 @@ segregated_fits_insert_block_head(segregated_fits_head* head,
   uint32_t data_size = head->mem_size;
   uint32_t mem_size  = data_size + SEGREGATED_SIZE_SPACE;
   uint64_t block_addr = (uint64_t) block;
-  //D("block_addr : %lx", block_addr);
-  //D("data_size : %u", data_size);
-  //D("mem_size : %u", mem_size);
   *((uint64_t*)(block_addr - 8)) = mem_size & (~0U - 2);
   *((uint64_t*)(block_addr + data_size)) = mem_size & (~0U - 2); 
-  //D("Addr: header: %lx, footer: %lx", block_addr - 8, block_addr + data_size);
-  //D("header_size : %lu", *((uint64_t*)(block_addr - 8)));
-  //D("footer_size : %lu", *((uint64_t*)(block_addr + data_size)));
-  block->next = head->head->next;
-  head->head->next = block;
+  block->next = head->head;
+  head->head = block;
 }
 
 static inline int
@@ -100,7 +94,7 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
   mem_size = ((uint32_t)class_index +SEGREGATED_SIZE_SPACE_BITS+ 1)
              << DIFF_MAGIC;
   D("index: %d, addr_ptr: %lx, size: %u, block_size: %u", 
-  class_index, addr, *size, mem_size);
+      class_index, addr, *size, mem_size);
 
   if (class_index < 0) { // size < 24
     assert(class_index >= -3);
@@ -126,7 +120,6 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
   assert((*((uint64_t*)(data_addr - 8))) == 
          *((uint64_t*)(data_addr + mem_size - 16)));
   assert((*((uint64_t*)(data_addr - 8))) == mem_size);
-
   *addr_ptr = (void*) (addr + mem_size);
   *size = *size - mem_size;
   return *size == 0 ? ENOMEM : 0;
@@ -221,21 +214,18 @@ dump_segregated_fits_block(segregated_fits_head* head)
   uint32_t mem_size, block_size;
   mem_size = head->mem_size;
   block_size = head->mem_size + SEGREGATED_SIZE_SPACE;
-  printf("MemoryBlockSize: %u, allocated: %u, head: %lx, mem_size_addr: %lx\n",
-         mem_size, block_size, (uint64_t) &head->head, &head->mem_size);
-
-  for(next = head->head->next; next != head->head; next = next->next) {
-    uint64_t next_addr = *(uint64_t*)next, header_size, footer_size;
-    printf("Block Head: %lx\n", (next_addr - 8));
+  printf("MemoryBlockSize: %u, AllocatedSize: %u,"
+         "HeadAddress: %lx\n"
+         "\t|\n",
+         mem_size, block_size, (uint64_t) &head->head);
+  for(next = head->head; next != &head->head; next = next->next) {
+    uint64_t next_addr = (uint64_t) next, header_size, footer_size;
     header_size = *(uint64_t*)(next_addr - 8);
     footer_size = *(uint64_t*)(next_addr + mem_size);
-    printf("Size: header: %u, footer: %u\n", header_size, footer_size);
+    printf("\t|---%lx\n", next_addr - 8);
     
     assert(block_size == header_size);
     assert(block_size == footer_size);
-    
-    //printf("address: %lx\n", (uint64_t)next);
-    //printf("size : %lx\n", *((uint64_t*)(((uint64_t)next) - 8)));
   }
 }
 
