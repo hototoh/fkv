@@ -17,20 +17,6 @@ typedef struct segregated_fits_head {
   uint32_t version;
 } segregated_fits_head;
 
-
-static inline void
-segregated_fits_insert_block_head(segregated_fits_head* head,
-                                  segregated_fits_list* block)
-{
-  uint32_t data_size = head->mem_size;
-  uint32_t mem_size  = data_size + SEGREGATED_SIZE_SPACE;
-  *((uint64_t*)(block - 8)) = mem_size & (~0UL - 1);
-  *((uint64_t*)(block + data_size)) = mem_size & (~0UL - 1);
-
-  block->next = head->head->next;
-  head->head->next = block;
-}
-
 static inline bool
 segregated_fits_is_empty(segregated_fits_head* head)
 {
@@ -51,7 +37,8 @@ segregated_fits_class_size(uint32_t max_size)
 {
   // multiple size classes incrementing by 8 bytes  
   // min class size is 8
-  return max_size >> DIFF_MAGIC;
+  uint32_t bit = max_size >> DIFF_MAGIC;
+  return (max_size & 0b111)  ? bit + 1 : bit;
 }
 
 static inline uint32_t
@@ -69,10 +56,17 @@ destroy_segregated_fits(segregated_fits* sfits)
 segregated_fits*
 create_segregated_fits(uint32_t max_data_size);
 
+int
+segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
+                           uint32_t* size);
+
 void*
 get_segregated_fits_block(segregated_fits* sfits, uint32_t data_len);
 
 void
 free_segregated_fits_block(segregated_fits* sfits, segregated_fits_list* block);
+
+void
+dump_segregated_fits(segregated_fits* sfits);
 
 #endif
