@@ -40,7 +40,8 @@ create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
     D("Fail to mmap file.");
     goto error1;
   }
-  print_addr(addr, "mmapped address");
+  //print_addr(addr, "mmapped address");
+  D("mmapped address: %lx", addr);
   
   mem_allocator* allocator;
   allocator = (mem_allocator*) malloc(sizeof(mem_allocator));
