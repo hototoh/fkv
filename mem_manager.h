@@ -24,6 +24,8 @@ segregated_fits_is_empty(segregated_fits_head* head)
 }
                                  
 typedef struct segregated_fits {
+  uint64_t addr;
+  uint32_t addr_size;
   uint32_t len;
   segregated_fits_head heads[0];
 } segregated_fits;
