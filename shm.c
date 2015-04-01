@@ -1,40 +1,47 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
 #include <fcntl.h>
-#include <unistd.h> // getpagesize
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <limits.h>
 #include <sys/mman.h>
+#include <linux/limits.h> // PATH_MAX
 
 #include "common.h"
-#include "mem_alloc.h"
+#include "shm.h"
 
-//#define FILE_NAME "/mnt/hugetlbfs/huge/hugepagefile"
-//#define MM_SIZE (256UL*1024*1024)
 #define MM_PROTECTION (PROT_READ | PROT_WRITE)
 #define MM_FLAGS (MAP_SHARED)
+
+static void hugepage_path(char* path, char* file)
+{
+  snprintf(path, PATH_MAX, "%s/%sfile", HUGEPAGE_PREFIX, file);
+}
 
 mem_allocator*
 create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
 {
+  char path[PATH_MAX];
+  hugepage_path(path, filename);
+
   int fd;
-  fd = open(filename, O_CREAT | O_RDWR, 0755);
+  fd = open(path, O_CREAT | O_RDWR, 0755);
   if (fd < 0) {
     D("Fail to open %s", filename);
     goto error0;
   }
 
   // XXX mem_size must be multiples of 2MiB
-  uint64_t mem_size = _mem_size;  
+  uint64_t mem_size = _mem_size;
   void* addr = mmap(_addr, mem_size, MM_PROTECTION, MM_FLAGS, fd, 0);
   if(addr == MAP_FAILED) {
     D("Fail to mmap file.");
     goto error1;
   }
-  print_addr(addr, "mmapped address");
+  //print_addr(addr, "mmapped address");
+  D("mmapped address: %lx", addr);
   
   mem_allocator* allocator;
   allocator = (mem_allocator*) malloc(sizeof(mem_allocator));
@@ -46,7 +53,7 @@ create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
   allocator->fd = fd;
   allocator->size = mem_size;
   allocator->addr = addr;
-  strcpy(allocator->filename, filename);
+  strncpy(allocator->filename, path, PATH_MAX);
   return allocator;
 error2:
   munmap(addr, mem_size);

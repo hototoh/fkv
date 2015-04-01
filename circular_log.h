@@ -4,22 +4,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "mem_alloc.h"
+#include "shm.h"
+#include "bucket.h"
 
 #define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
 #define CIRCULAR_LOG_SIZE 1ULL << 29
 
-typedef struct index_entry {
-  /* value 0 means empty */ 
-  uint64_t tag:16;
-  uint64_t offset:48;
-} index_entry;
-
-#define BUCKET_ENTRY_SIZE 15
-typedef struct bucket {
-  uint64_t version;
-  index_entry entries[BUCKET_ENTRY_SIZE];
-} bucket;
 
 #define OPTIMISTIC_LOCK(v, vv, x)                                       \
   do {                                                                  \
