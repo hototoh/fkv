@@ -13,7 +13,7 @@
 
 #define MAX_DATA_SIZE 1152
 #define TEST_FILE "test_mem_manager"
-#define MEM_SIZE (1 << 15)
+#define MEM_SIZE (1 << 20)
 
 void segregated_fits_test()
 {
@@ -32,22 +32,23 @@ void segregated_fits_test()
   dump_segregated_fits(sfits);
  
 
-#define GET_NUM 8
+#define GET_NUM 1000
+  
   void* addrs[GET_NUM];
   uint32_t sizes[GET_NUM];
   for (int i = 0; i < GET_NUM; i++) {    
-    sizes[i] = 1 << i;
+    sizes[i] = i * 8 % 1152;
     addrs[i] = get_segregated_fits_block(sfits, sizes[i]);
+    D("GET[%d] size: %u, address: 0x%lx", i, sizes[i], addrs[i]);
     assert(addrs[i] != NULL);
-    D("GET: size: %u, address: 0x%lx", sizes[i], addrs[i]);
   }
  
   dump_segregated_fits(sfits);
-  for (int i = 0; i < GET_NUM; i++) {    
+  for (int i = 0; i < GET_NUM; i++) {
+    D("Free[%d] addr 0x%lx, Size: %lu", i, addrs[i], *(uint64_t*)((char*)addrs[i] - 8));
     free_segregated_fits_block(sfits, (segregated_fits*) addrs[i]);
   }
  
-  sleep(1);
   dump_segregated_fits(sfits);
  
   destroy_segregated_fits(sfits);  

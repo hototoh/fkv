@@ -13,6 +13,8 @@
 #define FREE_BIT(x) (x) & (~0U - 1)
 #define USED_BIT(x) (x) | 1
 
+//#define DEBUG
+
 static inline uint32_t
 BLOCK_SIZE(segregated_fits_list* block)
 {
@@ -41,6 +43,16 @@ mask_allocated_flag(segregated_fits_list* block)
   *((uint64_t*)((char*) block - BOUNDARY_TAG_SIZE)) 
       = *((uint64_t*)((char*) block - SEGREGATED_SIZE_SPACE + mem_size)) 
       = USED_BIT(mem_size);
+}
+
+static inline void
+mask_free_flag(segregated_fits_list* block)
+{
+  uint64_t mem_size;
+  mem_size = BLOCK_SIZE(block);
+  *((uint64_t*)((char*) block - BOUNDARY_TAG_SIZE)) 
+      = *((uint64_t*)((char*) block - SEGREGATED_SIZE_SPACE + mem_size)) 
+      = mem_size;
 }
 
 static inline void
@@ -74,8 +86,8 @@ segregated_fits_insert_block_head(segregated_fits_head* head,
 static void
 get_segregated_fits_block_with_addr(segregated_fits_head* head, void* addr)
 {
-  D("Addr: 0x%lx block_size: %u, data size: %u", addr,
-    head->mem_size+SEGREGATED_SIZE_SPACE, head->mem_size);
+  //D("addr: 0x%lx block_size: %u, data size: %u", addr,
+  //  head->mem_size+SEGREGATED_SIZE_SPACE, head->mem_size);
   if (segregated_fits_is_empty(head)) {
     assert("head must have the block with the addr" && false);
   }
@@ -106,101 +118,85 @@ get_segregated_fits_block_with_addr(segregated_fits_head* head, void* addr)
  *                        +----------------------+
  */
 static inline bool
-merge_block_forward(segregated_fits* sfits, void** block_end_ptr)
+merge_block_forward(segregated_fits* sfits, void** block_tail_ptr)
 {
+  uint32_t max_block_size = segregated_fits_class(sfits->len);
   uint64_t head_addr = sfits->addr;
-  uint64_t block_size = FREE_BIT(*(uint_64*)(*block_end_ptr));
-  void* previous_block_end = (void*)((char*)(*block_end_ptr) - block_size);
-  if(previous_block_end < head_addr) {
-    D("check next blcok is over the end of partition");
+  uint64_t block_size = FREE_BIT(*(uint64_t*)(*block_tail_ptr));
+  void* previous_block_tail = (void*)((char*)(*block_tail_ptr) - block_size);
+
+  if((uint64_t)previous_block_tail < head_addr) {
+    //D("check next blcok is over the tail of partition");
     return false;
   }
     
-  if(*(uint64_t*)previous_block_end & 1UL) {
+  if((*(uint64_t*)previous_block_tail) & 1UL) {
+#ifdef DEBUG
     D("previous block used");
+    D("\n   block_tail     : 0x%lx"
+      "\nprevious_tail     : 0x%lx"
+      "\n   block_size     : %lu"
+      "\nprevious_tail_size: %lu",
+      *block_tail_ptr,
+      previous_block_tail,
+      *(uint64_t*)*block_tail_ptr,
+      *(uint64_t*)previous_block_tail
+      );
+#endif
+    return false;
+  }
+
+  if((*(uint64_t*)previous_block_tail) == (max_block_size +
+                                           SEGREGATED_SIZE_SPACE)) {    
+    //D("previous block is max size empty");
     return false;
   }
 
   void* previous_head;
-  previous_head = (char*)(*block_end_ptr) - *(uint64_t*)previous_block_end;
-  if(previoud_head < head_addr) {
-    assert("check next blcok is over the end of partition" && false);
+  previous_head = (void*)((char*)previous_block_tail 
+                          - *(uint64_t*)previous_block_tail
+                          + BOUNDARY_TAG_SIZE);
+  if((uint64_t)previous_head < head_addr) {
+    assert("check next blcok is over the tail of partition" && false);
     return false;
   }
   
-  // remove previous block from segregated fits list.
-  int index = (int) ((*(uint64_t*)previous_head) >> DIFF_MAGIC) - 3;
+  // remove the previous block from segregated fits list.
+  int data_size = (int) (*(uint64_t*)previous_block_tail
+                                   - SEGREGATED_SIZE_SPACE);
+  int index;
+  index = data_size > 0 ? class_ceil_index(data_size) : -1;
+  index = index >= (int) sfits->len ? sfits->len - 1 : index;
+#ifdef DEBUG
+  D("\n   block_tail     : 0x%lx"
+    "\nprevious_tail     : 0x%lx"
+    "\nprevious_head     : 0x%lx"
+    "\n   block_size     : %lu"
+    "\nprevious_tail_size: %lu"
+    "\nprevious_head_size: %lu"
+    "\n    data_size     : %u"
+    "\n        index     : %d",
+    *block_tail_ptr,
+    previous_block_tail,
+    previous_head,
+    *(uint64_t*)*block_tail_ptr,
+    *(uint64_t*)previous_block_tail,
+    *(uint64_t*)previous_head, data_size, index
+    );
+#endif
   if (index >= 0) {
-    segregated_fits_head* head = &sfits->heads[i];
+    segregated_fits_head* head = &sfits->heads[index];
     segregated_fits* list_ptr = (char*) previous_head + BOUNDARY_TAG_SIZE;
+    
     get_segregated_fits_block_with_addr(head, (void*) list_ptr);
   }
 
-  uint64_t new_block_size = block_size + *(uint64_t*)previous_block_end;
-  *(uint64_t*)previous_head = *(uint64_t*)(*block_end_ptr) = new_block_size;
-  *block_end_ptr = (char*) previou_head + new_block_size - BOUNDARY_TAG_SIZE;
-  
+  uint64_t new_block_size = block_size + *(uint64_t*)previous_block_tail;
+  *(uint64_t*)previous_head = *(uint64_t*)(*block_tail_ptr) = new_block_size;
+  // *block_tail_ptr = (char*) previou_head + new_block_size - BOUNDARY_TAG_SIZE;  
   return true;
 }
-/*
-static inline bool
-merge_block_forward(segregated_fits* sfits, segregated_fits_list** _block)
-{
-  uint64_t head_addr = sfits->addr;
-  segregated_fits_list* block = *_block;
-  segregated_fits_list* previous;
-  uint32_t block_size = BLOCK_SIZE(block);
-  uint32_t max_size = segregated_fits_class(sfits->len) + SEGREGATED_SIZE_SPACE;
-  uint64_t* previous_block_size_ptr;
-  previous_block_size_ptr = (uint64_t*)((char*)block - SEGREGATED_SIZE_SPACE);
 
-  // check next blcok is over the end of partition
-  if (head_addr > (uint64_t) previous_block_size_ptr) {
-    //D("check next blcok is over the end of partition");
-    return false;
-  }
-
-  uint32_t previous_block_size = FREE_BIT(*previous_block_size_ptr);
-  if (previous_block_size == max_size) {
-    D("previous max_size\n");
-    return false;
-  }
-
-  // in this case, somthing is wrong. previous block is over partition boundary.
-  previous = (segregated_fits_list*)((char*)block - previous_block_size);
-  if (head_addr > (uint64_t) (char*)previous - BOUNDARY_TAG_SIZE) {
-    assert("block is over the partition boundary" && false);
-    return false;
-  }
-
-  // if set the flag, the block is being used.
-  if (BLOCK_USED(previous)) {
-    D("the block is used");
-    return false;
-  }
-  
-  D("current  block addr: 0x%lx, size: %u", (char*)block - 8, BLOCK_SIZE(block));
-  D("previous block addr: 0x%lx, size: %u", (char*)previous - 8, BLOCK_SIZE(previous));
-  // remove previous block from old head
-  int previous_block_index = (int)(previous_block_size >> DIFF_MAGIC) -3;
-  if (previous_block_index >= 0) {
-    //D("remove previous block from old head");
-    segregated_fits_head* head = &sfits->heads[previous_block_index];
-    get_segregated_fits_block_with_addr(head, (void*) previous);
-  }
-
-  // merge current block and next block.
-  uint64_t new_block_size = block_size + previous_block_size;
-  *(uint64_t*)((char*)block - SEGREGATED_SIZE_SPACE + block_size)
-      = *(uint64_t*)((char*)previous - 8) 
-      = FREE_BIT(new_block_size);
-
-  *_block = previous;
-  D("addr: 0x%lx, block size: %u", *_block, BLOCK_SIZE(*_block));
-
-  return true;
-}
-*/
 /**
  *  second argument is -> +----------------------+
  *                        |    size        |flag |
@@ -215,58 +211,72 @@ merge_block_forward(segregated_fits* sfits, segregated_fits_list** _block)
  */
 
 static inline bool
-merge_block_backward(segregated_fits* sfits, segregated_fits_list** _block)
+merge_block_backward(segregated_fits* sfits, void** block_head_ptr)
 {
-  uint32_t max_size = segregated_fits_class(sfits->len) + SEGREGATED_SIZE_SPACE;
-  uint64_t end_addr = sfits->addr + sfits->addr_size;
-  segregated_fits_list* block = *_block;
-  segregated_fits_list* next;
-  uint64_t block_size = BLOCK_SIZE(block);
-  next = (segregated_fits_list*)((char*)block + block_size);
-
-  // check next blcok is over the end of partition
-  if ((uint64_t) next >= end_addr) {
-    D("next(%u) < partition end(%u)", next, end_addr);
+  uint32_t max_block_size = segregated_fits_class(sfits->len);
+  uint64_t tail_addr = sfits->addr + sfits->addr_size;
+  uint64_t block_size = FREE_BIT(*(uint64_t*)(*block_head_ptr));
+  void* next_block_head = (void*)((char*)(*block_head_ptr) + block_size);
+  
+  if(tail_addr < ((uint64_t)next_block_head + BOUNDARY_TAG_SIZE)) {
+    //D("check next blcok is over the end of partition");
     return false;
-  }
-
-  // if set the flag, the block is being used.
-  if (BLOCK_USED(next)){
-    D("the block is used");
-    return false;
-  }
-
-  uint32_t next_block_size = BLOCK_SIZE(next);
-  uint64_t next_block_end = (uint64_t)(
-      (char*) next + next_block_size - BOUNDARY_TAG_SIZE);
-  if (next_block_size == max_size) {
-    D("next max_size\n");
-    return false;
-  }
-  // in this case, somthing is wrong. next block is over partition boundary.
-  if (next_block_end > end_addr) {
-    D("bad bad bad. next block is over partition boundary");
-    assert("block is over the partition boundary" && false);
   }
   
-  D("current block addr: 0x%lx, size: %u", (char*)block - 8, BLOCK_SIZE(block));
-  D("   next block addr: 0x%lx, size: %u", (char*)next  - 8, BLOCK_SIZE(next));
-  // remove next block from old head  
-  int next_block_index = (int)(next_block_size >> DIFF_MAGIC) - 3;
-  if (next_block_index >= 0) {
-    D("remove next block from old head");
-    segregated_fits_head* head = &sfits->heads[next_block_index];
-    get_segregated_fits_block_with_addr(head, (void*)next);
+  if((*(uint64_t*)next_block_head) & 1UL) {
+    //D("next block is used");
+    return false;
   }
 
-  // merge current block and next block.
-  uint64_t new_block_size = block_size + next_block_size;
-  *(uint64_t*)((char*)next - SEGREGATED_SIZE_SPACE + next_block_size)
-      = *(uint64_t*)((char*)block - 8) 
-      = FREE_BIT(new_block_size);
+  if((*(uint64_t*)next_block_head) == (max_block_size +
+                                       SEGREGATED_SIZE_SPACE)) {
+    //D("next block is full size empty block");
+    return false;    
+  }
 
+  void* next_tail = (void*) ((char*)next_block_head - BOUNDARY_TAG_SIZE
+                             + *(uint64_t*)next_block_head);
+  if(tail_addr < (uint64_t)next_tail+BOUNDARY_TAG_SIZE) {
+    assert("check next blcok is over the end of partition" && false);
+    return false;
+  }
+
+  // remove the next block from segregated fits list.
+  int data_size = (int)(*(uint64_t*)next_block_head
+                        - SEGREGATED_SIZE_SPACE);
+  int index;
+  index = data_size > 0 ? class_ceil_index(data_size) : -1;
+  index = index >= (int) sfits->len ? sfits->len - 1 : index;
+#ifdef DEBUG
+  D("\n   block_head : 0x%lx"
+    "\n    next_tail : 0x%lx"
+    "\n    next_head : 0x%lx"
+    "\n   block_size : %lu"
+    "\nnext_tail_size: %lu"
+    "\nnext_head_size: %lu"
+    "\n    data_size : %u"
+    "\n        index : %d",
+    *block_head_ptr,
+    next_tail,
+    next_block_head,
+    *(uint64_t*)*block_head_ptr,
+    *(uint64_t*)next_tail,
+    *(uint64_t*)next_block_head, data_size, index
+    );
+#endif
+  if (index >= 0) {
+    segregated_fits_head* head = &sfits->heads[index];
+    void* list_ptr= (void*)((char*) next_block_head + BOUNDARY_TAG_SIZE);
+    
+    get_segregated_fits_block_with_addr(head, list_ptr);
+  }
+
+  uint64_t new_block_size = block_size + *(uint64_t*)next_block_head;
+  *(uint64_t*)(*block_head_ptr) = *(uint64_t*) next_tail = new_block_size;
+ 
   return true;
 }
+
 
 segregated_fits*
 create_segregated_fits(uint32_t max_data_size)
@@ -302,7 +312,7 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
   uint32_t mem_size;  
   char* addr = (char*) *addr_ptr;
   int class_index = (int)(*size >> DIFF_MAGIC) - SEGREGATED_SIZE_SPACE_BITS - 1;
-  class_index = class_index > (int)(sfits->len) ?
+  class_index = class_index >= (int)(sfits->len) ?
                 (int) sfits->len - 1 : class_index;  
   mem_size = ((uint32_t)class_index +SEGREGATED_SIZE_SPACE_BITS+ 1)
              << DIFF_MAGIC;
@@ -330,11 +340,24 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
   segregated_fits_head *head = &sfits->heads[class_index];
   char* data_addr = addr + BOUNDARY_TAG_SIZE;
   segregated_fits_insert_block_head(head, (segregated_fits_list*) data_addr);
-  
+
+#ifdef DEBUG
+  D("%u == %u == %u",
+    (uint32_t)*((uint64_t*)(addr)),
+    (uint32_t)*((uint64_t*)(addr + mem_size - BOUNDARY_TAG_SIZE)),
+    mem_size
+    );
+#endif
+  assert((*((uint64_t*)(addr))) == 
+         *((uint64_t*)(addr + mem_size - BOUNDARY_TAG_SIZE)));
+  assert((*((uint64_t*)(addr))) == mem_size);
+
+      /*
   assert((*((uint64_t*)(data_addr - BOUNDARY_TAG_SIZE))) == 
          *((uint64_t*)(data_addr + mem_size - SEGREGATED_SIZE_SPACE)));
   assert((*((uint64_t*)(data_addr - BOUNDARY_TAG_SIZE))) == mem_size);
-  D("class index:%d, ", class_index);
+      */
+  //D("class index:%d, ", class_index);
   *addr_ptr = (void*) (addr + mem_size);
   *size = *size - mem_size;
   return *size == 0 ? ENOMEM : 0;
@@ -342,16 +365,15 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
 
 static bool
 __segregated_fits_reclassing(segregated_fits* sfits, 
-                             segregated_fits** block_ptr, uint32_t* size)
+                             void** block_head_ptr, uint32_t* size)
 {
-  void* addr = (void*)((char*)*block_ptr - BOUNDARY_TAG_SIZE);
-  int res = segregated_fits_reclassing(sfits, &addr, &size);
+  int res = segregated_fits_reclassing(sfits, (void**) block_head_ptr, size);
   if( res < 0) return false;
-
-  *block_ptr = (segregated_fits*)((char*) addr + BOUNDARY_TAG_SIZE);
-  *(uint64_t*)((char*)addr + *size - BOUNDARY_TAG_SIZE)
-      = *(uint64_t*)((char*)addr)
+  
+  *(uint64_t*)*block_head_ptr
+      = *(uint64_t*)((char*)*block_head_ptr + *size - BOUNDARY_TAG_SIZE)
       = *size;
+
   return true;
 }
 
@@ -379,7 +401,8 @@ segregated_fits_divide(segregated_fits* sfits, int class_index)
     assert(buddy_class_index >= -2);
     
     // divide block into block_A and block_B
-    segregated_fits_list* block, *block_A, *block_B;
+    segregated_fits_list* block, *block_A;
+    void* block_B_head;
     uint64_t block_size, block_A_size, block_B_size;
     block = __get_segregated_fits_block(head);
     block_size   = BLOCK_SIZE(block);
@@ -387,39 +410,40 @@ segregated_fits_divide(segregated_fits* sfits, int class_index)
     block_A_size = (uint64_t)segregated_fits_class((uint32_t)class_index)
                    + SEGREGATED_SIZE_SPACE;
     block_B_size = (uint64_t)(i - class_index) << DIFF_MAGIC;
-    block_B = (segregated_fits_list *)(
-        (char*) block + SEGREGATED_SIZE_SPACE +
+    block_B_head = (segregated_fits_list *)(
+        (char*) block + BOUNDARY_TAG_SIZE +
         (segregated_fits_class((uint32_t) class_index)));
 
-    D("%lu => %lu + %lu", block_size, block_A_size, block_B_size);
+    // D("%lu => %lu + %lu", block_size, block_A_size, block_B_size);
     segregated_fits_head* head_A = &sfits->heads[class_index];
     segregated_fits_insert_block_head(head_A, block_A);
     
     // before call merge_block_backward, MUST set the size to the block.
     if (buddy_class_index >= 0) {
-      *(uint64_t*)((char*) block_B + block_B_size - SEGREGATED_SIZE_SPACE)
-                   = *(uint64_t*)((char*) block_B - BOUNDARY_TAG_SIZE)
+      *(uint64_t*)((char*) block_B_head + block_B_size - BOUNDARY_TAG_SIZE)
+                   = *(uint64_t*) block_B_head
                    = block_B_size;
     } else if(buddy_class_index == -2) { // 0 <= size < 8
       //D("8 block");
-      mask_free_8_block((char*)block_B - 8);
+      mask_free_8_block((char*)block_B_head);
     } else if(buddy_class_index == -1) { // 8 <= size < 16 // not necessary?
       //D("16 block");
-      mask_free_16_block((char*)block_B - 8);
+      mask_free_16_block((char*)block_B_head);
     } else {
       D("buddy_class_index : %d", buddy_class_index);
       assert(false);
     }
-
-    while(merge_block_backward(sfits, &block_B));
+    
+    while(merge_block_backward(sfits, &block_B_head));
 
     D("divide %u-size block into %u-size and %u-size",
-      block_size, block_A_size, BLOCK_SIZE(block_B));
+      block_size, block_A_size, *(uint64_t*)block_B_head);
         
-    buddy_class_index = (BLOCK_SIZE(block_B) >> DIFF_MAGIC) - 3;
+    buddy_class_index = (int)((*(uint64_t*)block_B_head) >> DIFF_MAGIC) - 3;
     if (buddy_class_index >= 0) {
       segregated_fits_head* head_B = &sfits->heads[buddy_class_index];
-      segregated_fits_insert_block_head(head_B, block_B);
+      segregated_fits_insert_block_head(head_B, (segregated_fits_list*)(
+          (char*)block_B_head + BOUNDARY_TAG_SIZE));
     }    
        
     return true;
@@ -451,27 +475,40 @@ get_segregated_fits_block(segregated_fits* sfits, uint32_t data_size)
 void
 free_segregated_fits_block(segregated_fits* sfits, segregated_fits_list* block)
 {
-  printf("\n");
   // merge previous and next blocks
+  mask_free_flag(block);
   uint32_t max_size = segregated_fits_class(sfits->len) + SEGREGATED_SIZE_SPACE;
   uint32_t size;
-  while(merge_block_forward(sfits, &block)) {
-    if(max_size <= BLOCK_SIZE(block)) {
-      __segregated_fits_reclassing(sfits, &block, &size);
+  void* block_head,* block_tail = (void*) ((char*) block + BLOCK_SIZE(block)
+                                            - SEGREGATED_SIZE_SPACE);
+  while(merge_block_forward(sfits, &block_tail)) {
+    size = (uint32_t)(*(uint64_t*) block_tail);
+    if(max_size <= size) {
+      block_head = (void*)((char*) block_tail - size + BOUNDARY_TAG_SIZE); 
+      __segregated_fits_reclassing(sfits, (void**)&block_head, &size);
       break;
     }
   }
-  D("block addr: 0x%lx, size: %u", block, BLOCK_SIZE(block));
-  while(merge_block_backward(sfits, &block)) {
-    D("block addr: 0x%lx, size: %u", block, BLOCK_SIZE(block));
-    if(max_size <= BLOCK_SIZE(block)) {
-      if(!__segregated_fits_reclassing(sfits, &block, &size))
+  
+  size = (uint32_t)(*(uint64_t*) block_tail);
+  block_head = (void*)((char*) block_tail - size + BOUNDARY_TAG_SIZE); 
+#ifdef DEBUG
+  D("block addr: 0x%lx, size: %u", block_head,
+    BLOCK_SIZE((char*) block_head + 8));
+#endif
+  while(merge_block_backward(sfits, &block_head)) {
+#ifdef DEBUG
+    D("block addr: 0x%lx, size: %u", block_head, 
+      BLOCK_SIZE((char*) block_head + 8));
+#endif
+    size = (uint32_t)(*(uint64_t*) block_head);
+    if(max_size <= size) {
+      if(!__segregated_fits_reclassing(sfits, (void**) &block_head, &size))
         break;
     }
   }
-  D("block addr: 0x%lx, size: %u", block, BLOCK_SIZE(block));
 
-  uint64_t data_size = BLOCK_SIZE(block);
+  uint64_t data_size = *(uint64_t*) block_head;
   int class_index = (data_size >> DIFF_MAGIC) - 3;
   if (class_index < 0) return ;
   if (class_index > sfits->len) {
@@ -482,6 +519,7 @@ free_segregated_fits_block(segregated_fits* sfits, segregated_fits_list* block)
   D("FREE block: %lu, index: %d", data_size, class_index);
 
   segregated_fits_head* head = &sfits->heads[class_index];
+  block = (segregated_fits_list*) ((char*) block_head + BOUNDARY_TAG_SIZE);
   segregated_fits_insert_block_head(head, block);
 }
 
