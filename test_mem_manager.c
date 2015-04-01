@@ -20,6 +20,9 @@ void segregated_fits_test()
   segregated_fits* sfits = create_segregated_fits(MAX_DATA_SIZE);
   assert(sfits != NULL);
   mem_allocator* allocator = create_mem_allocator(TEST_FILE, MEM_SIZE);
+  sfits->addr = allocator->addr;
+  sfits->addr_size = allocator->size;
+
   assert(allocator != NULL);
   uint32_t size = allocator->size;
   do {
@@ -27,15 +30,24 @@ void segregated_fits_test()
     if (res > 0) break;
   } while(1);
   dump_segregated_fits(sfits);
+ 
 
-#define GET_NUM 4
+#define GET_NUM 8
   void* addrs[GET_NUM];
+  uint32_t sizes[GET_NUM];
   for (int i = 0; i < GET_NUM; i++) {    
-    addrs[i] = get_segregated_fits_block(sfits, 1 << i);
+    sizes[i] = 1 << i;
+    addrs[i] = get_segregated_fits_block(sfits, sizes[i]);
     assert(addrs[i] != NULL);
-    D("get address: 0x%lx", addrs[i]);
+    D("GET: size: %u, address: 0x%lx", sizes[i], addrs[i]);
   }
-  
+ 
+  dump_segregated_fits(sfits);
+  for (int i = 0; i < GET_NUM; i++) {    
+    free_segregated_fits_block(sfits, (segregated_fits*) addrs[i]);
+  }
+ 
+  sleep(1);
   dump_segregated_fits(sfits);
  
   destroy_segregated_fits(sfits);  
