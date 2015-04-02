@@ -131,7 +131,6 @@ insert_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
                    uint64_t offset)
 {
   bucket* bkt = _bucket;
-  static int a = 0;
   do {
     index_entry* entries = bkt->entries;
     for(int i = 0; i < BUCKET_ENTRY_SIZE; i++) {
