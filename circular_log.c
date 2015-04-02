@@ -22,15 +22,14 @@ rss_queue_hash_portion(uint64_t keyhash);
 
 /***** circular_log *****/
 static inline bool
+__remove_circular_log_entry(circular_log* log_table, bucket* bkt,
+                            circular_log_entry* entry);
+
+static inline bool
 __get_circular_log_entry(circular_log* log_table, bucket* bucket, 
                          circular_log_entry* entry);
-
-//static inline void
-//delete_firstn_circular_log_entry(circular_log* log_table);
-
-/***** key-value table *****/
 static inline bucket*
-get_entry_bucket(kv_table* table, circular_log_entry* entry);
+get_entry_bucket(circular_log* log_table, circular_log_entry* entry);
 
 /***** circular_log_entry *****/
 static inline bool
@@ -51,38 +50,34 @@ rss_queue_hash_portion(uint64_t keyhash)
 
 /***** circular_log *****/
 circular_log*
-create_circular_log(char* filename, uint64_t log_mem_size)
+create_circular_log(void* base_addr, void* head, uint64_t size,
+                    bucket_pool* bkt_pool)
 {
+  uint32_t log_mem_size = (uint32_t) size;
   circular_log* log_table = (circular_log*) malloc(sizeof(circular_log));
   if (log_table == NULL) goto error0;
   memset(log_table, 0, sizeof(circular_log));
 
-  mem_allocator* allocator;
-  allocator = create_mem_allocator(filename, log_mem_size);  
-  if (allocator == NULL) goto error1;
-
   segregated_fits* sfits = create_segregated_fits(SEGREGATED_MAX_DATA_SIZE);
-  if (sfits == NULL) goto error2;
+  if (sfits == NULL) goto error1;
 
-  sfits->addr = (uint64_t) allocator->addr;
-  sfits->addr_size = (uint32_t) allocator->size;
-  void* addr = allocator->addr;
-  segregated_fits_reclassing(sfits, &addr, (uint32_t*) &log_mem_size);
-  
+  sfits->addr = (uint64_t) head;
+  sfits->addr_size = log_mem_size;
+  void* addr = head;
+  do {
+    int res = segregated_fits_reclassing(sfits, &addr, &log_mem_size);
+    if (res > 0) break;
+  } while(1);
+
   log_table->sfits = sfits;
-  log_table->allocator = allocator;
-  log_table->addr = (uint64_t) allocator->addr;
-  log_table->len  = log_mem_size;
-  log_table->head = log_table->tail = 0;
+  log_table->bkt_pool = bkt_pool;
+  log_table->base_addr = base_addr;
+  log_table->head = head;
+  log_table->size  = size;
   return log_table;
-error2:
-  D("error2");
-  destroy_mem_allocator(allocator);
 error1:
-  D("error1");
   free(log_table);
 error0:
-  D("error0");
   return NULL;
 }
 
@@ -92,37 +87,87 @@ destroy_circular_log(circular_log* log_table)
   if(log_table == NULL) return;
 
   destroy_segregated_fits(log_table->sfits);
-  destroy_mem_allocator(log_table->allocator);
   free(log_table);
 }
+
+/**
+ * This function must call in Optimistic lock
+ */
+static inline bool
+__remove_circular_log_entry(circular_log* log_table, bucket* bkt,
+                            circular_log_entry* entry)
+{  
+  int index = 0;
+  index_entry *i_entry;
+  uint64_t keyhash = entry->keyhash;
+  void* old_entry = NULL;
+  
+  do {
+    i_entry = search_index_entry(&bkt, keyhash, &index);
+    if (i_entry != NULL) {
+      if (match_index_entry_tag(i_entry->tag, keyhash)) {
+        uint64_t offset = bkt->entries[index].offset;
+        if (match_circular_log_entry_key(entry, (uint64_t) log_table->base_addr,
+                                         offset)) {
+          delete_index_entry_with_index(bkt, index);
+          old_entry = (void*)((uint64_t)log_table->base_addr + offset);
+          free_segregated_fits_block(log_table->sfits, 
+                                     (segregated_fits_list*)old_entry);
+          return true;
+        }
+      }
+    }
+  } while(i_entry != NULL);
+  return false;
+}
+
+bool
+remove_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
+{  
+  bucket* bkt = get_entry_bucket(log_table, entry);
+  uint64_t version, new_version;
+  OPTIMISTIC_LOCK(version, new_version, bkt);
+
+  bool res = __remove_circular_log_entry(log_table, bkt, entry);
+
+  OPTIMISTIC_UNLOCK(bkt);
+  return res;
+}
+
 
 /**
  * before calling this function, MUST check if the key exist already in the log
  * or not and get the bucket pointer at that time.
  */
 bool
-put_circular_log_entry(circular_log* log_table, bucket* bucket, 
-                       circular_log_entry* entry)
+put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
 {
+  bucket* bkt = get_entry_bucket(log_table, entry);
   uint64_t version, new_version;
-  OPTIMISTIC_LOCK(version, new_version, bucket);
+  OPTIMISTIC_LOCK(version, new_version, bkt);
   
-  remove_circular_log_entry(log_table, bucket, entry);
+  __remove_circular_log_entry(log_table, bkt, entry);
   segregated_fits *sfits = log_table->sfits;
   uint32_t entry_size = (uint32_t) entry->initial_size;
   void* new_addr = get_segregated_fits_block(sfits, entry_size);
   if (new_addr == NULL) {
     return false;
   }
-
+  
+  uint64_t offset = (uint64_t) new_addr - (uint64_t) log_table->base_addr;
   memcpy(new_addr, entry, entry_size);
-  OPTIMISTIC_UNLOCK(bucket);
+  insert_index_entry(log_table->bkt_pool, bkt, entry->keyhash, offset);
+
+  OPTIMISTIC_UNLOCK(bkt);
 
   return true;
 }
 
+/**
+ * This function callee must check the version consistency of bucket.
+ */
 static inline bool
-__get_circular_log_entry(circular_log* log_table, bucket* bucket, 
+__get_circular_log_entry(circular_log* log_table, bucket* bkt, 
                          circular_log_entry* entry)
 {
   int index = 0;
@@ -131,14 +176,16 @@ __get_circular_log_entry(circular_log* log_table, bucket* bucket,
   circular_log_entry* dst_entry;
   
   do {
-    i_entry = search_index_entry(&bucket, keyhash, &index);
+    i_entry = search_index_entry(&bkt, keyhash, &index);
     if (i_entry != NULL) {
       if (match_index_entry_tag(i_entry->tag, keyhash)) {
         // calc from offset and base pointer
-        uint64_t offset = bucket->entries[index].offset;
+        uint64_t offset = bkt->entries[index].offset;
         // check the key is the same
-        if (match_circular_log_entry_key(entry, log_table->addr, offset)) {
-          dst_entry = (circular_log_entry*)((uint64_t)log_table->addr + offset);
+        if (match_circular_log_entry_key(entry, (uint64_t)log_table->base_addr,
+                                         offset)) {
+          dst_entry = (circular_log_entry*)((uint64_t)log_table->base_addr
+                                            + offset);
           memcpy(entry, dst_entry, dst_entry->initial_size);
           return true;
         }
@@ -156,65 +203,24 @@ __get_circular_log_entry(circular_log* log_table, bucket* bucket,
  * @entry:ouput matched log entry.
  */
 bool
-get_circular_log_entry(circular_log* log_table, bucket* bucket,
-                       circular_log_entry* entry)
+get_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
 {
   bool ret;
   uint64_t version_begining, version_end;
+  bucket* bkt = get_entry_bucket(log_table, entry);
   do {
-    version_begining = bucket->version;
-    ret = __get_circular_log_entry(log_table, bucket, entry);
-    version_end = bucket->version;
+    version_begining = bkt->version;
+    ret = __get_circular_log_entry(log_table, bkt, entry);
+    version_end = bkt->version;
   } while(version_begining != version_end);
   return ret;
 }
 
-/**
- * This function must call in Optimistic lock
- */
-bool
-remove_circular_log_entry(circular_log* log_table, bucket* bucket, 
-                          circular_log_entry* entry)
-{  
-  int index = 0;
-  index_entry *i_entry;
-  uint64_t keyhash = entry->keyhash;
-  void* old_entry = NULL;
-  //bucket_pool* bkt_pool = log_table->bkt_pool;
-  
-  do {
-    i_entry = search_index_entry(&bucket, keyhash, &index);
-    if (i_entry != NULL) {
-      if (match_index_entry_tag(i_entry->tag, keyhash)) {
-        uint64_t offset = bucket->entries[index].offset;
-        if (match_circular_log_entry_key(entry, log_table->addr, offset)) {
-          delete_index_entry_with_index(bucket, index);
-          old_entry = (void*)((uint64_t)log_table->addr + offset);
-          free_segregated_fits_block(log_table->sfits, 
-                                     (segregated_fits_list*)old_entry);
-          return true;
-        }
-      }
-    }
-  } while(i_entry != NULL);
-  return false;
-}
-
 /***** key-value table *****/
-static inline bucket*
-get_entry_bucket(kv_table* table, circular_log_entry* entry)
-{
-  bucket_pool* pool = table->bkt_pool;
-  uint64_t bucket_mask = pool->main_size - 1;
-  uint64_t index = bucket_hash_portion(entry->keyhash) & bucket_mask;
-  return &pool->mains[index];
-}
-
 kv_table*
-create_kv_table(char* file, uint32_t nthread,  uint32_t main_size,
+create_kv_table(char* file, uint32_t nthread, uint32_t main_size,
                 uint32_t spare_size)
-{
-  
+{  
   kv_table* table = (kv_table*) malloc(sizeof(kv_table) +
                                        sizeof(circular_log*) * nthread);
   if (table == NULL) goto error0;
@@ -223,26 +229,30 @@ create_kv_table(char* file, uint32_t nthread,  uint32_t main_size,
   bucket_pool* bkt_pool = create_bucket_pool(file, main_size, spare_size);
   if (bkt_pool == NULL) goto error1;
 
+  mem_allocator* allocator;
+  allocator = create_mem_allocator(file, CIRCULAR_LOG_SIZE * nthread);
+  if (allocator == NULL) goto error2;
+
   for(int i = 0; i < nthread; i++) {
-    char filename[PATH_MAX];
-    sprintf(filename, "%s_%d", file, i);
-    circular_log* log_table = create_circular_log(filename, CIRCULAR_LOG_SIZE);
+    void* head = allocator->addr;
+    circular_log* log_table = create_circular_log(allocator->addr, head,
+                                                  CIRCULAR_LOG_SIZE, bkt_pool);
     if (log_table == NULL) {
-      goto error2;
+      goto error3;
     }
-    log_table->bkt_pool = bkt_pool;
     table->log[i] = log_table; 
   }
 
+  table->allocator = allocator;
   table->bkt_pool = bkt_pool;
   table->log_size = nthread;
   return table;
-error2:
-  for(int i = 0; i < nthread; i++) {
-    if (table->log[i] != NULL) {
+error3:
+  for(int i = 0; i < nthread; i++)
+    if (table->log[i] != NULL)
       destroy_circular_log(table->log[i]);
-    }
-  }
+  destroy_mem_allocator(allocator);
+error2:
   destroy_bucket_pool(bkt_pool);
 error1:
   free(table);
@@ -258,26 +268,7 @@ destroy_kv_table(kv_table* table)
       destroy_circular_log(table->log[i]);
     }
   }
+  destroy_mem_allocator(table->allocator);
+  destroy_bucket_pool(table->bkt_pool);
   free(table);
-}
-
-bool
-put_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry)
-{
-  bucket* bucket = get_entry_bucket(table, entry);
-  return put_circular_log_entry(log, bucket, entry);  
-}
-
-bool
-get_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry)
-{
-  bucket* bucket = get_entry_bucket(table, entry);
-  return get_circular_log_entry(log, bucket, entry);
-}
-
-bool
-delete_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry)
-{
-  bucket* bucket = get_entry_bucket(table, entry);  
-  return remove_circular_log_entry(log, bucket, entry);
 }

@@ -82,37 +82,42 @@ print_circular_log_entry(circular_log_entry* entry)
 }
 
 typedef struct circular_log {
-  mem_allocator* allocator;
   segregated_fits *sfits;
   bucket_pool* bkt_pool;
-  // circular log size
-  uint64_t addr;
-  uint64_t len; 
-  uint64_t head;
-  uint64_t tail;  
+  void* base_addr;
+  void* head;
+  uint64_t size;
 } circular_log;
 
 circular_log*
-create_circular_log(char* filename, uint64_t log_mem_size);
+create_circular_log(void* base_addr, void* head, uint64_t size,
+                    bucket_pool* bkt_pool);
 
 void
 destroy_circular_log(circular_log* log_table);
 
-bool
-put_circular_log_entry(circular_log* log_table, bucket* bucket,
-                       circular_log_entry* entry);
+static inline bucket*
+get_entry_bucket(circular_log* log_table, circular_log_entry* entry)
+{
+  bucket_pool* pool = log_table->bkt_pool;
+  uint64_t bucket_mask = pool->main_size - 1;
+  uint64_t index = bucket_hash_portion(entry->keyhash) & bucket_mask;
+  return &pool->mains[index];
+}
 
 bool
-get_circular_log_entry(circular_log* log_table, bucket* bucket,
-                       circular_log_entry* entry);
+put_circular_log_entry(circular_log* log_table, circular_log_entry* entry);
 
 bool
-remove_circular_log_entry(circular_log* log_table, bucket* bucket,
-                          circular_log_entry* entry);
+get_circular_log_entry(circular_log* log_table, circular_log_entry* entry);
+
+bool
+remove_circular_log_entry(circular_log* log_table, circular_log_entry* entry);
 
 typedef struct kv_table {
   bucket_pool* bkt_pool;
-  uint64_t log_size;  
+  mem_allocator* allocator;
+  uint64_t log_size;
   circular_log* log[0];
 } kv_table;
 
@@ -122,14 +127,5 @@ create_kv_table(char* file, uint32_t nthread,  uint32_t main_size,
 
 void
 destroy_kv_table(kv_table* table);
-
-bool
-put_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry);
-
-bool
-get_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry);
-
-bool
-delete_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry);
 
 #endif
