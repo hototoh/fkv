@@ -99,11 +99,20 @@ index_entry*
 search_index_entry(bucket** _bucket, uint64_t keyhash, int* index);
 
 void
-delete_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
+delete_index_entry(bucket_pool* bkt_pool, bucket* bkt, uint64_t keyhash,
                    uint64_t offset);
 
+static inline void
+delete_index_entry_with_index(bucket* bkt, int index)
+{
+  index_entry* entries = bkt->entries;
+  entries[index].tag = 0;
+  entries[index].offset = 0;
+  return ;
+}
+
 bool
-insert_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
+insert_index_entry(bucket_pool* bkt_pool, bucket* bkt, uint64_t keyhash,
                    uint64_t offset);
 
 void

@@ -119,7 +119,7 @@ delete_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
     
     bkt = next_spare_bucket(bkt);
   } while(bkt != NULL);
-  printf("fail to delete\n");
+  D("fail to delete index entry\n");
 }
 
 /**

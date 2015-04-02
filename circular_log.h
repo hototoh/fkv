@@ -6,6 +6,7 @@
 
 #include "shm.h"
 #include "bucket.h"
+#include "mem_manager.h"
 
 #define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
 #define CIRCULAR_LOG_SIZE 1ULL << 29
@@ -82,6 +83,8 @@ print_circular_log_entry(circular_log_entry* entry)
 
 typedef struct circular_log {
   mem_allocator* allocator;
+  segregated_fits *sfits;
+  bucket_pool* bkt_pool;
   // circular log size
   uint64_t addr;
   uint64_t len; 
@@ -108,25 +111,25 @@ remove_circular_log_entry(circular_log* log_table, bucket* bucket,
                           circular_log_entry* entry);
 
 typedef struct kv_table {
-  circular_log* log;
-  uint8_t bucket_bits;
-  uint64_t bucket_size;
-  bucket buckets[0];
+  bucket_pool* bkt_pool;
+  uint64_t log_size;  
+  circular_log* log[0];
 } kv_table;
 
 kv_table*
-create_kv_table(uint8_t bucket_bits, circular_log* log);
+create_kv_table(char* file, uint32_t nthread,  uint32_t main_size,
+                uint32_t spare_size);
 
 void
 destroy_kv_table(kv_table* table);
 
 bool
-put_kv_table(kv_table* table, circular_log_entry* entry);
+put_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry);
 
 bool
-get_kv_table(kv_table* table, circular_log_entry* entry);
+get_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry);
 
 bool
-delete_kv_table(kv_table* table, circular_log_entry* entry);
+delete_kv_table(kv_table* table, circular_log* log,  circular_log_entry* entry);
 
 #endif
