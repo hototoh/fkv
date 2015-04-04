@@ -8,7 +8,7 @@
 #include "shm.h"
 #include "bucket.h"
 
-#define BUCKET_MEM_SIZE(x) (((x >> 17)+1) << 20)
+#define BUCKET_MEM_SIZE(x) (x << 7) // x * sizeof(bucket)
 
 /**
  * 1 bucket is 8 byte (2 << 3)
@@ -17,8 +17,10 @@
 bucket_pool*
 create_bucket_pool(char* file, uint32_t main_size, uint32_t spare_size)
 {
-  bucket_pool* bkt_pool;
-  bkt_pool = (bucket_pool*) malloc(sizeof(bucket_pool));
+  char path[PATH_MAX];
+  snprintf(path, PATH_MAX, "%s_bucket", file);
+
+  bucket_pool*  bkt_pool = (bucket_pool*) malloc(sizeof(bucket_pool));
   if (bkt_pool == NULL) {
     D("Fail to create bucket_pool");
     goto error0;
@@ -26,18 +28,20 @@ create_bucket_pool(char* file, uint32_t main_size, uint32_t spare_size)
 
   uint32_t total_size = main_size + spare_size;
   uint64_t mem_size = BUCKET_MEM_SIZE(total_size);
-  mem_allocator* allocator = create_mem_allocator(file, mem_size);
+  mem_allocator* allocator = create_mem_allocator(path, mem_size);
   if(allocator == NULL) {
-    D("Fail to create mem_allocator for bucket");
+    D("Fail to create mem_allocator for bucket w/ %lu", mem_size);
     goto error1;
   }
- 
+  memset(allocator->addr, 0, mem_size);
+  
   bkt_pool->main_size = main_size;
   bkt_pool->spare_size = spare_size;
   bkt_pool->allocator = allocator;
   bkt_pool->spare_cur = 0;
-  bkt_pool->mains = allocator->addr;
-  bkt_pool->spares = allocator->addr + sizeof(bucket) * main_size;
+  bkt_pool->mains = (bucket*) allocator->addr;
+  bkt_pool->spares = (bucket*) (allocator->addr + sizeof(bucket) * main_size);
+  
   return bkt_pool;  
 error1:
   free(bkt_pool);

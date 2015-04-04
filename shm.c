@@ -17,7 +17,7 @@
 
 static void hugepage_path(char* path, char* file)
 {
-  snprintf(path, PATH_MAX, "%s/%sfile", HUGEPAGE_PREFIX, file);
+  snprintf(path, PATH_MAX, "%s/%s_file", HUGEPAGE_PREFIX, file);
 }
 
 mem_allocator*
@@ -37,16 +37,15 @@ create_mem_allocator_with_addr(char* filename, uint64_t _mem_size, void* _addr)
   uint64_t mem_size = _mem_size;
   void* addr = mmap(_addr, mem_size, MM_PROTECTION, MM_FLAGS, fd, 0);
   if(addr == MAP_FAILED) {
-    D("Fail to mmap file.");
+    D("Fail to mmap file: %s, size: %lu.", path, mem_size);
     goto error1;
   }
-  //print_addr(addr, "mmapped address");
-  D("mmapped address: %lx", addr);
-  
+  D("%s mmapped address: %lx, size: %llu", path, addr, mem_size);
+
   mem_allocator* allocator;
   allocator = (mem_allocator*) malloc(sizeof(mem_allocator));
   if (allocator == NULL) {
-    D("Fail to open %s", filename);
+    D("Fail to open %s", path);
     goto error2;
   }
 
