@@ -7,7 +7,7 @@
 #include <assert.h>
 
 #include "common.h"
-#include "mem_alloc.h"
+#include "shm.h"
 
 #define FILENAME "/mnt/hugetlbfs/test_mem_alloc"
 #define MM_SIZE (256UL*1024*1024)
