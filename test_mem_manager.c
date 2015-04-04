@@ -45,7 +45,8 @@ void segregated_fits_test()
  
   dump_segregated_fits(sfits);
   for (int i = 0; i < GET_NUM; i++) {
-    D("Free[%d] addr 0x%lx, Size: %lu", i, addrs[i], *(uint64_t*)((char*)addrs[i] - 8));
+    D("Free[%d] addr 0x%lx, Size: %lu",
+      i, addrs[i], *(uint64_t*)((char*)addrs[i] - 8));
     free_segregated_fits_block(sfits, (segregated_fits*) addrs[i]);
   }
  
