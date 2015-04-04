@@ -17,9 +17,6 @@ static inline bool
 match_circular_log_entry_key(circular_log_entry* entry1, 
                              uint64_t addr, uint64_t offset);
 
-static inline uint64_t
-rss_queue_hash_portion(uint64_t keyhash);
-
 /***** circular_log *****/
 static inline bool
 __remove_circular_log_entry(circular_log* log_table, bucket* bkt,
@@ -28,8 +25,6 @@ __remove_circular_log_entry(circular_log* log_table, bucket* bkt,
 static inline bool
 __get_circular_log_entry(circular_log* log_table, bucket* bucket, 
                          circular_log_entry* entry);
-static inline bucket*
-get_entry_bucket(circular_log* log_table, circular_log_entry* entry);
 
 /***** circular_log_entry *****/
 static inline bool
@@ -39,13 +34,6 @@ match_circular_log_entry_key(circular_log_entry* entry1,
   circular_log_entry* entry2;
   entry2 = (circular_log_entry*) (addr + offset);
   return equal_circular_log_entry_key(entry1, entry2);
-}
-
-// 16bit
-static inline uint64_t
-rss_queue_hash_portion(uint64_t keyhash)
-{
-  return (keyhash >> 48) & 0xffffUL;
 }
 
 /***** circular_log *****/
@@ -145,15 +133,15 @@ put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
   bucket* bkt = get_entry_bucket(log_table, entry);
   uint64_t version, new_version;
   OPTIMISTIC_LOCK(version, new_version, bkt);
-  
   __remove_circular_log_entry(log_table, bkt, entry);
+
   segregated_fits *sfits = log_table->sfits;
   uint32_t entry_size = (uint32_t) entry->initial_size;
   void* new_addr = get_segregated_fits_block(sfits, entry_size);
   if (new_addr == NULL) {
     return false;
   }
-  
+
   uint64_t offset = (uint64_t) new_addr - (uint64_t) log_table->base_addr;
   memcpy(new_addr, entry, entry_size);
   insert_index_entry(log_table->bkt_pool, bkt, entry->keyhash, offset);
@@ -234,13 +222,13 @@ create_kv_table(char* file, uint32_t nthread, uint32_t main_size,
   if (allocator == NULL) goto error2;
 
   for(int i = 0; i < nthread; i++) {
-    void* head = allocator->addr;
+    void* head = (void*)((uint64_t) allocator->addr + CIRCULAR_LOG_SIZE * i);
     circular_log* log_table = create_circular_log(allocator->addr, head,
                                                   CIRCULAR_LOG_SIZE, bkt_pool);
     if (log_table == NULL) {
       goto error3;
     }
-    table->log[i] = log_table; 
+    table->log[i] = log_table;
   }
 
   table->allocator = allocator;

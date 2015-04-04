@@ -4,13 +4,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "common.h"
 #include "shm.h"
 #include "bucket.h"
 #include "mem_manager.h"
 
 #define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
-#define CIRCULAR_LOG_SIZE 1ULL << 29
-
+#define CIRCULAR_LOG_SIZE (1ULL << 27)
+//#define CIRCULAR_LOG_SIZE (1ULL << 20)
 
 #define OPTIMISTIC_LOCK(v, vv, x)                                       \
   do {                                                                  \
@@ -22,6 +23,13 @@
   do {                                          \
     __sync_add_and_fetch(&x->version, 1);       \
   } while(0)
+
+// 16bit
+static inline uint64_t
+rss_queue_hash_portion(uint64_t keyhash)
+{
+  return (keyhash >> 48) & 0xffffUL;
+}
 
 /* circular_log_entry should be multiples of 8 bytea
  * for memory alingment !?
@@ -122,8 +130,8 @@ typedef struct kv_table {
 } kv_table;
 
 kv_table*
-create_kv_table(char* file, uint32_t nthread,  uint32_t main_size,
-                uint32_t spare_size);
+create_kv_table(char* file, uint32_t nthread,  uint32_t main_bucket_size,
+                uint32_t spare_bucket_size);
 
 void
 destroy_kv_table(kv_table* table);
