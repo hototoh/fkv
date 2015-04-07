@@ -426,7 +426,8 @@ free_segregated_fits_block(segregated_fits* sfits, segregated_fits_list* block)
     size = (uint32_t)(*(uint64_t*) block_head);
     if(max_size <= size) {
       if(!__segregated_fits_reclassing(sfits, (void**) &block_head, &size))
-        break;
+	;
+      break;
     }
   }
 

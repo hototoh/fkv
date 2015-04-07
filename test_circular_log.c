@@ -17,7 +17,8 @@
 #define LOG_FILE_NAME ("/mnt/hugetlbfs/test_circular_log")
 #define BUCKET_SIZE 14
 
-#define ITER_NUM 10240
+#define ITER_NUM 10240000
+#define ITER_NUM 491520
 #define MAX_DATA_SIZE 1024
 
 unsigned int miss_count = 0;;
@@ -101,6 +102,7 @@ void test_kv_table(uint8_t bucket_bits)
 {
   uint32_t key_length = 8, val_length = 8;
   long nthread = sysconf(_SC_NPROCESSORS_ONLN);
+  D("core num: %u", nthread);
   uint32_t main_bucket_size = 6 << 18;
   uint32_t spare_bucket_size = 2 << 18;
   kv_table *table = create_kv_table("test_kv_table", nthread, 

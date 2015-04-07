@@ -10,7 +10,7 @@
 #include "mem_manager.h"
 
 #define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
-#define CIRCULAR_LOG_SIZE (1ULL << 27)
+#define CIRCULAR_LOG_SIZE (1ULL << 30)
 //#define CIRCULAR_LOG_SIZE (1ULL << 20)
 
 #define OPTIMISTIC_LOCK(v, vv, x)                                       \
