@@ -26,9 +26,16 @@ static inline void print_addr(void* addr, char* var) {
 
 #endif
 
+#define FKV_ROUNDUP8(x) (((x) + 7UL) & (~7UL))
+#define FKV_ROUNDUP64(x) (((x) + 63UL) & (~63UL))
+#define FKV_ROUNDUP4K(x) (((x) + 4095UL) & (~4095UL))
+#define FKV_ROUNDUP1M(x) (((x) + 1048575UL) & (~1048575UL))
+#define FKV_ROUNDUP2M(x) (((x) + 2097151UL) & (~2097151UL))
+
 #ifndef FLS_SUPPORT
 #define fls generic_fls
 #endif
+
 static inline int
 generic_fls(uint32_t x)
 {
