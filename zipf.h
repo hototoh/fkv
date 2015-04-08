@@ -18,7 +18,6 @@
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
-#include "util.h"
 
 struct zipf_gen_state
 {
@@ -33,6 +32,25 @@ struct zipf_gen_state
 	// unsigned short rand_state[3];		// prng state
 	uint64_t rand_state;
 };
+
+static
+uint32_t
+mehcached_rand(uint64_t *state)
+{
+    // same as Java's
+    *state = (*state * 0x5deece66dUL + 0xbUL) & ((1UL << 48) - 1);
+    return (uint32_t)(*state >> (48 - 32));
+}
+
+static
+double
+mehcached_rand_d(uint64_t *state)
+{
+    // caution: this is maybe too non-random
+    *state = (*state * 0x5deece66dUL + 0xbUL) & ((1UL << 48) - 1);
+    return (double)*state / (double)((1UL << 48) - 1);
+}
+
 
 static
 double
