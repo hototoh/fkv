@@ -1,5 +1,5 @@
 #ifndef _GNU_SOURCE
-#definee _GNU_SOURCE
+#define _GNU_SOURCE
 #endif
 
 #include <stdio.h>
@@ -8,16 +8,16 @@
 #include <stdbool.h>
 #include <string.h>
 #include <pthread.h>
+#include <assert.h>
 #include <sched.h>
 
 #include "common.h"
 #include "city.h"
 #include "zipf.h"
 #include "mem_manager.h"
-#include "mica_shm.h"
 #include "circular_log.h"
 
-static bool running;
+static volatile bool running;
 
 typedef enum _benchmark_mode_t
 {
@@ -44,29 +44,32 @@ struct proc_arg
 
   size_t op_count;
   uint8_t *op_types;
-  uint8_t *op_keys;
-  uint64_t *op_key_hashes;
-  uint16_t *op_key_parts;
-  uint8_t *op_values;
+  uint8_t *op_log_entry;
 
   size_t num_partitions;
   kv_table* table;
   circular_log* log_table;
 
-  size_t owner_thread_id[MEHCACHED_MAX_PARTITIONS];
-
   benchmark_mode_t benchmark_mode;
 
   uint64_t junk;
   uint64_t success_count;
-  // size_t num_existing_items;
-  // size_t *existing_items;
 };
 
 static inline uint16_t
 get_partition_id(uint64_t key_hash, uint16_t num_partitions)
 {
-  return (uint16_t)(keyhash >> 48) & (uint16_t)(num_partitions - 1);
+  return (uint16_t)(key_hash >> 48) & (uint16_t)(num_partitions - 1);
+}
+
+static inline circular_log_entry*
+circular_log_entry_at(uint8_t* entries, size_t key_length, size_t val_length,
+           uint64_t index)
+{
+  circular_log_entry* entry;
+  uint64_t entry_size = key_length + val_length + sizeof(circular_log_entry);
+  entry = (circular_log_entry*) (entries + entry_size * index);
+  return entry;
 }
 
 int
@@ -78,17 +81,13 @@ benchmark_proc(void* _args)
 
   const size_t key_length = args->key_length;
   const size_t val_length = args->value_length;
-
   const int64_t op_count = (int64_t)args->op_count;
   const uint8_t *op_types = args->op_types;
-  const uint8_t *op_keys = args->op_keys;
-  const uint64_t *op_key_hashes = args->op_key_hashes;
-  const uint16_t *op_key_parts = args->op_key_parts;
-  const uint8_t *op_values = args->op_values;
-  const circular_log* log_table  = args->log;
+  const uint8_t *op_log_entry = args->op_log_entry;
+  const circular_log* log_table  = args->log_table;
   benchmark_mode_t benchmark_mode = args->benchmark_mode;
 
-  cpu_set cpuset;
+  cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(thread_id + 1, &cpuset);
   sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
@@ -106,17 +105,10 @@ benchmark_proc(void* _args)
       {
 #ifdef USE_PREFETCHING
 #endif
+        circular_log_entry* entry = circular_log_entry_at(op_log_entry, key_length,
+                                                          val_length, i);
         if (i >= 0)
         {
-          struct circular_log_entry entry = {
-            .initial_size= key_length + val_length + sizeof(circular_log_entry),
-            .keyhash = op_key_hashes[i],
-            .key_length = key_length,
-            .val_length = val_length,
-          };
-          *(uint64_t*)&entry.data = (uint64_t*)(op_key +(size_t)i * key_length);
-          *(((uint64_t*)&entry.data) + 1) = (uint64_t*)(op_values +
-                                                        (size_t)i * val_length);
           if (put_circular_log_entry(log_table, entry))
             success_count++;
         }
@@ -133,22 +125,15 @@ benchmark_proc(void* _args)
       {
 #ifdef USE_PREFETCHING
 #endif
-        struct circular_log_entry entry = {
-          .initial_size= key_length + val_length + sizeof(circular_log_entry),
-          .keyhash = op_key_hashes[i],
-          .key_length = key_length,
-          .val_length = val_length,
-        };
-        *(uint64_t*)&entry.data = (uint64_t*)(op_key +(size_t)i * key_length);
-        *(((uint64_t*)&entry.data) + 1) = (uint64_t*)(op_values +
-                                                      (size_t)i * val_length);
+        circular_log_entry* entry = circular_log_entry_at(op_log_entry, key_length,
+                                                          val_length, i);
         if (i >= 0) {
           bool is_get = op_types[i] == 0;
           if (is_get)
           {
-            uint8_t value[value_length];
+            uint8_t value[val_length];
             size_t value_length = val_length;
-            if(get_circular_log(log_table, &entry))
+            if(get_circular_log_entry(log_table, &entry))
                success_count++;
             junk += (uint64_t)value[0];
           } else {
@@ -161,12 +146,8 @@ benchmark_proc(void* _args)
     case BENCHMARK_MODE_DELETE:
       for (i = 0; i < op_count; i++)
       {
-        struct circular_log_entry entry = {
-          .initial_size= key_length + val_length + sizeof(circular_log_entry),
-          .keyhash = op_key_hashes[i],
-          .key_length = key_length,
-          .val_length = val_length,
-        };
+        circular_log_entry* entry = circular_log_entry_at(op_log_entry, key_length,
+                                                          val_length, i);
 #ifdef USE_PREFETCHING
 #endif
         if (i >= 0)
@@ -185,20 +166,10 @@ benchmark_proc(void* _args)
   return 0;
 }
 
-static inline circular_log_entry*
-circular_log_entry_at(uint8_t* entries, size_t key_length, size_t val_length
-           uint64_t index)
-{
-  circular_log_entry* entry;
-  uint64_t entry_size = key_length + val_length + sizeof(circular_log_entry);
-  entry = (circular_log_entry*) (entries + entry_size * index);
-  return entry;
-}
-
 #define KEY_SIZE 8
 #define VAL_SIZE 8
-#define NUM_ITEM 1 << 15
-
+#define NUM_ITEM (1 << 15)
+#define BUCKET_SIZE (1 << 17)
 void benchmark(int core_num, float zipf_theta, float mth_threshold)
 {
   printf("## Benchmark\n");
@@ -221,7 +192,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
 
   const size_t num_threads = core_num;
   const size_t num_operations = core_num * NUM_ITEM;
-  const size_t max_num_operatios_per_thread = num_operations;
+  const size_t max_num_operations_per_thread = num_operations;
 
   const size_t key_length = KEY_SIZE;
   const size_t val_length = VAL_SIZE;
@@ -243,26 +214,33 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
   char filename[PATH_MAX];
   sprintf(filename, "test_data_entries");
   uint64_t data_size = (sizeof(circular_log_entry) + KEY_SIZE + VAL_SIZE) * num_items * 2;
-  uint8_t* log_entries = create_mem_allocator(filename, data_size);
+  mem_allocator* log_allocator = create_mem_allocator(filename, data_size);
+  uint8_t* log_entries = log_allocator->addr;
   assert(log_entries);
 
   uint64_t *op_count = (uint64_t *)malloc(sizeof(uint64_t) * num_threads);
   assert(op_count);
 
-  uint8_t **op_types = (uint8_t **)malloc(sizeof(uint8_t *) * num_threas);
+  uint8_t **op_types = (uint8_t **)malloc(sizeof(uint8_t *) * num_threads);
   assert(op_types);
 
   uint8_t** op_log_entries = (uint8_t**) malloc(sizeof(uint8_t*) * num_threads);
   assert(op_log_entries);
 
+  mem_allocator* op_log_allocators[num_threads];
   for (int i = 0; i < num_threads; i++) {
     char filename[PATH_MAX];
     sprintf(filename, "ops_data_entries_%d", core_num);
-    op_log_entries[i] = create_mem_allocator(filename, data_size);
-    assert(ops_log_entries[i]);    
+    uint64_t data_size = (sizeof(circular_log_entry) + KEY_SIZE + VAL_SIZE) * num_operations;
+    
+    mem_allocator* op_log_allocator = create_mem_allocator(filename, data_size);
+    op_log_entries[i] = op_log_allocator->addr;
+    assert(op_log_entries[i]);    
 
-    op_types[i] = (uint8_t *)malloc(sizeof(uint8_t *) * num_operations_per_thread);
+    op_types[i] = (uint8_t *)malloc(sizeof(uint8_t *) * max_num_operations_per_thread);
     assert(op_types[i]);
+
+    op_log_allocators[i] = op_log_allocator;
   }
 
   //perf_count_t pc = benchmark_perf_count_init();
@@ -274,13 +252,14 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
   }
 
   printf("generating %zu items\n", num_items);
-  for (size_t i = 0; i < num_items * 2; i++)
+  for (uint64_t i = 0; i < num_items * 2; i++)
   {
     circular_log_entry* entry = circular_log_entry_at(log_entries, key_length, val_length, i);
+    
     entry->key_length = key_length;
     entry->val_length = val_length;
-    memcpy((void*)entry->data, i, key_length);
-    memcpy((void*)((char*)entry->data + key_length), i, val_length);
+    memcpy((void*)entry->data, &i, key_length);
+    memcpy((void*)((char*)entry->data + key_length), &i, val_length);
     entry->keyhash = CityHash64(entry->data, key_length);
     entry->initial_size = sizeof(circular_log_entry) + key_length + val_length;
   }
@@ -288,7 +267,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
 
   //#######################################################################################################
   benchmark_mode_t benchmark_mode;
-  for (benchmark_mode_t = 0; benchmark_mode < BENCHMARK_MODE_MAX; benchmark_mode++) {
+  for (benchmark_mode = 0; benchmark_mode < BENCHMARK_MODE_MAX; benchmark_mode++) {
     uint32_t get_threshold = 0;
     if (benchmark_mode == BENCHMARK_MODE_ADD ||
         benchmark_mode == BENCHMARK_MODE_SET ||
@@ -349,7 +328,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
       }
     }
 
-    memset(op_count, 0, sizeof(uint64_t)*num_threas);
+    memset(op_count, 0, sizeof(uint64_t)*num_threads);
     for(size_t i = 0; i < num_operations; i++) {
       size_t j; 
       if (benchmark_mode == BENCHMARK_MODE_ADD ||
@@ -366,14 +345,14 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
           j += num_items;
       }
 
-      uint16_t partition_id = get_partition_id(entry->keyhash, num_threads);
-      uint32_t op_rand = mehcaced_rand(&op_type_rand_state);
+      circular_log_entry* src_entry = circular_log_entry_at(log_entries, key_length, val_length, j);
+      uint16_t partition_id = get_partition_id(src_entry->keyhash, num_threads);
+      uint32_t op_rand = mehcached_rand(&op_type_rand_state);
       bool is_get = op_rand <= get_threshold;
     
       size_t thread_id = partition_id;
-      if (op_count[thread_id] < max_num_operatios_per_thread) {
-        op_types[thred_id][op_count[thread_id]] = is_get ? 0 : 1;
-        circular_log_entry* src_entry = circular_log_entry_at(log_entries, key_length, val_length, j);
+      if (op_count[thread_id] < max_num_operations_per_thread) {
+        op_types[thread_id][op_count[thread_id]] = is_get ? 0 : 1;
         uint8_t* dst_entry_base = op_log_entries[thread_id];
         circular_log_entry* dst_entry = circular_log_entry_at(dst_entry_base, key_length, val_length, op_count[thread_id]);
         memcpy(dst_entry, src_entry, src_entry->initial_size);
@@ -390,18 +369,18 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
       args[thread_id].thread_id      = thread_id;
 
       args[thread_id].key_length     = key_length;
-      args[thread_id].value_length   = value_length;
-      args[thread_id].entries        = op_log_entries[thread_id];
+      args[thread_id].value_length   = val_length;
+      args[thread_id].op_log_entry   = op_log_entries[thread_id];
 
       args[thread_id].table          = table;
-      args[thread_id].log            = table->logs[thread_id];
+      args[thread_id].log_table      = table->log[thread_id];
+      args[thread_id].benchmark_mode = benchmark_mode;
     }
 
     D("executing workload");     /* Start measuring */
     running = false;
-    for(int thread_id = 0; thread_id < core_num; thread_id++) {    
-      struct proc_arg* arg = &args[thread_id];
-      pthread_create(&arg->thread, NULL, (void*) benchmark_proc, (void*) arg);    
+    for(int thread_id = 0; thread_id < num_threads; thread_id++) {    
+      pthread_create(&args[thread_id].thread, NULL, (void*) benchmark_proc, (void*) &args[thread_id]);    
     }
 
     gettimeofday(&tv_start, NULL);
@@ -427,7 +406,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
     /* sum the results */
     size_t success_count = 0;
     size_t operations = 0;
-    for (thread_id = 0; thread_id < num_threads; thread_id++)
+    for (size_t thread_id = 0; thread_id < num_threads; thread_id++)
     {
       success_count += args[thread_id].success_count;
       operations += args[thread_id].op_count;
@@ -440,7 +419,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
     {
       case BENCHMARK_MODE_ADD:
         add_ops = (double)operations / diff;
-        mem_diff = mehcached_get_memuse() - mem_start;
+        //mem_diff = mehcached_get_memuse() - mem_start;
         break;
       case BENCHMARK_MODE_SET:
         set_ops = (double)operations / diff;
@@ -472,12 +451,11 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
     printf("\n");
   }
 
-
-  if (args[0].junk == 1)
-    printf("junk: %zu (ignore this line)\n", args[0].junk);
+  //if (args[0].junk == 1)
+  //  printf("junk: %zu (ignore this line)\n", args[0].junk);
 
   //benchmark_perf_count_free(pc);
-  printf("memory:     %10.2lf MB\n", (double)mem_diff * 0.000001);
+  //printf("memory:     %10.2lf MB\n", (double)mem_diff * 0.000001);
   printf("add:        %10.2lf Mops\n", add_ops * 0.000001);
   printf("set:        %10.2lf Mops\n", set_ops * 0.000001);
   printf("get_hit:    %10.2lf Mops\n", get_hit_ops * 0.000001);
