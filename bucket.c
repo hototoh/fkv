@@ -11,7 +11,7 @@
 #define BUCKET_MEM_SIZE(x) (x << 7) // x * sizeof(bucket)
 
 /**
- * 1 bucket is 8 byte (2 << 3)
+ * 1 bucket is 16 * 8 byte
  * @main_size + @spare_size : must be multiples of 2 << 20
  */
 bucket_pool*
@@ -40,7 +40,8 @@ create_bucket_pool(char* file, uint32_t main_size, uint32_t spare_size)
   bkt_pool->allocator = allocator;
   bkt_pool->spare_cur = 0;
   bkt_pool->mains = (bucket*) allocator->addr;
-  bkt_pool->spares = (bucket*) (allocator->addr + sizeof(bucket) * main_size);
+  bkt_pool->spares = (bucket*) (allocator->addr +
+                                sizeof(bucket) * main_size);
   
   return bkt_pool;  
 error1:
@@ -92,6 +93,7 @@ search_index_entry(bucket** _bucket, uint64_t keyhash, int* index)
   do {
     index_entry* entries = bkt->entries;
     for(int i = *index; i < BUCKET_ENTRY_SIZE; i++) {
+
       if(match_index_entry_tag(entries[i].tag, keyhash)) {
         // set current index to call next time.
         *index = i; 
@@ -123,7 +125,7 @@ delete_index_entry(bucket_pool* bkt_pool, bucket* _bucket, uint64_t keyhash,
     
     bkt = next_spare_bucket(bkt);
   } while(bkt != NULL);
-  D("fail to delete index entry\n");
+  //D("fail to delete index entry\n");
 }
 
 /**
