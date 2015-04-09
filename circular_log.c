@@ -92,6 +92,7 @@ __remove_circular_log_entry(circular_log* log_table, bucket* bkt,
   
   do {
     i_entry = search_index_entry(&bkt, keyhash, &index);
+    printf("search_index_entry index: %d, bkt: %lx\n", index, bkt);
     if (i_entry != NULL) {
       if (match_index_entry_tag(i_entry->tag, keyhash)) {
         uint64_t offset = bkt->entries[index].offset;
@@ -133,18 +134,23 @@ put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
   bucket* bkt = get_entry_bucket(log_table, entry);
   uint64_t version, new_version;
   OPTIMISTIC_LOCK(version, new_version, bkt);
+  printf("remove\n");
   __remove_circular_log_entry(log_table, bkt, entry);
+  printf("removed\n");
 
   segregated_fits *sfits = log_table->sfits;
   uint32_t entry_size = (uint32_t) entry->initial_size;
   void* new_addr = get_segregated_fits_block(sfits, entry_size);
   if (new_addr == NULL) {
+    printf("could not get new addr\n");
     return false;
   }
 
   uint64_t offset = (uint64_t) new_addr - (uint64_t) log_table->base_addr;
   memcpy(new_addr, entry, entry_size);
+  printf("insert\n");
   insert_index_entry(log_table->bkt_pool, bkt, entry->keyhash, offset);
+  printf("inserted\n");
 
   OPTIMISTIC_UNLOCK(bkt);
 
@@ -163,6 +169,10 @@ __get_circular_log_entry(circular_log* log_table, bucket* bkt,
   uint64_t keyhash = entry->keyhash;
   circular_log_entry* dst_entry;
   
+  D("SEARCHING key:%lu keyhash:%lx", 
+    *(uint64_t*)entry->data,
+    *(uint64_t*)&entry->keyhash);
+  
   do {
     i_entry = search_index_entry(&bkt, keyhash, &index);
     if (i_entry != NULL) {
@@ -180,8 +190,11 @@ __get_circular_log_entry(circular_log* log_table, bucket* bkt,
       }
     }
   } while(i_entry != NULL);
+  
+  D("404: NOT FOUND key:%lu keyhash:%lx", 
+    *(uint64_t*)entry->data,
+    *(uint64_t*)&entry->keyhash);
 
-  D("404: NOT FOUND ");
   return false;
 }
 
