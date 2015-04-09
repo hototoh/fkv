@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <sched.h>
 #include <time.h>
+#include <signal.h>
+#include <execinfo.h>
 
 #include "common.h"
 #include "city.h"
@@ -21,6 +23,19 @@
 #include "circular_log.h"
 
 static volatile bool running;
+extern bool DEBUG;
+void handler(int sig) {
+  void *array[10];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 10);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
 
 typedef enum _benchmark_mode_t
 {
@@ -94,7 +109,6 @@ benchmark_proc(void* _args)
 
   cpu_set_t cpuset;
   pthread_getaffinity_np(args->thread, sizeof(cpu_set_t), &cpuset);
-
   while(!running) ;
   assert(CPU_ISSET(thread_id, &cpuset));
   assert(CPU_COUNT(&cpuset) == 1);
@@ -107,10 +121,11 @@ benchmark_proc(void* _args)
       for (uint64_t i = 0; i < op_count; i++) {
 #ifdef USE_PREFETCHING
 #endif
+        
         circular_log_entry* entry = circular_log_entry_at(op_log_entry, key_length,
                                                           val_length, i);
         /*
-          if(thread_id == 0)
+        if (DEBUG) 
           D("[%d] %u < %u key: %lu, "
             "val: %lu, "
             "keyhash: %lx",
@@ -123,10 +138,6 @@ benchmark_proc(void* _args)
           if (put_circular_log_entry(log_table, entry))
             success_count++;
         }
-        /*
-        if(thread_id == 0)
-        D("[%d] %u < %u end.", thread_id, i, op_count);
-        */
       }
       break;
     case BENCHMARK_MODE_SET:
@@ -141,7 +152,7 @@ benchmark_proc(void* _args)
 #endif
         circular_log_entry* entry = circular_log_entry_at(op_log_entry, key_length,
                                                           val_length, i);
-        /*
+        if (DEBUG)
           D("[%d] op_type: %s, key: %lu, "
           "val: %lu, "
           "keyhash: %lx\n",
@@ -150,18 +161,14 @@ benchmark_proc(void* _args)
           *(uint64_t*)entry->data,
           *(uint64_t*)((char*)entry->data + 8),
           *(uint64_t*)&entry->keyhash);
-         */
+         
         if (i >= 0) {
           bool is_get = op_types[i] == 0;
-          if (is_get)
-          {
-            //uint8_t value[val_length];
-            //size_t value_length = val_length;
-            if(get_circular_log_entry(log_table, &entry))
+          if (is_get) {
+            if(get_circular_log_entry(log_table, entry))
                success_count++;
-            //junk += (uint64_t)value[0];
           } else {
-            if (put_circular_log_entry(log_table, &entry))
+            if (put_circular_log_entry(log_table, entry))
               success_count++;
           }
         }
@@ -175,7 +182,7 @@ benchmark_proc(void* _args)
 #endif
         if (i >= 0)
         {
-          if (remove_circular_log_entry(log_table, &entry))
+          if (remove_circular_log_entry(log_table, entry))
             success_count++;
         }
       }
@@ -192,7 +199,7 @@ benchmark_proc(void* _args)
 
 #define KEY_SIZE 8
 #define VAL_SIZE 8
-#define NUM_ITEM (1UL << 17)
+#define NUM_ITEM (1UL << 18)
 #define BUCKET_SIZE (1UL << 18)
 void benchmark(int core_num, float zipf_theta, float mth_threshold)
 {
@@ -211,11 +218,11 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
    * @max_num_operations_per_thread
    */
 
-  const size_t num_items = 16 * NUM_ITEM;
+  const size_t num_items = NUM_ITEM;
   const size_t num_partitions = core_num;
 
   const size_t num_threads = core_num;
-  const size_t num_operations = 16 * NUM_ITEM;
+  const size_t num_operations = NUM_ITEM;
   const size_t max_num_operations_per_thread = num_operations;
 
   const size_t key_length = KEY_SIZE;
@@ -315,6 +322,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
         printf("deleting %zu items\n", num_items);
         break;
       case BENCHMARK_MODE_SET_1:
+        DEBUG = true;
         printf("setting 1 item\n");
         break;
       case BENCHMARK_MODE_GET_1:
@@ -345,7 +353,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
     uint64_t op_type_rand_state = 3;
     struct zipf_gen_state zipf_state;
     //mehcached_zipf_init(&zipf_state, num_items, zipf_theta,
-    mehcached_zipf_init(&zipf_state, num_items * 2, zipf_theta,
+    mehcached_zipf_init(&zipf_state, num_items, zipf_theta,
                         (uint64_t)benchmark_mode);
 
     memset(op_count, 0, sizeof(uint64_t)*num_threads);
@@ -379,34 +387,6 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
         circular_log_entry* dst_entry = circular_log_entry_at(dst_entry_base, key_length, val_length, op_count[thread_id]);
         memcpy(dst_entry, src_entry, src_entry->initial_size);
         op_count[thread_id]++;
-        /*
-        D("[%d]\n"
-          "Src len:%lu, "
-          "key_length: %u, "
-          "key: %lu, "
-          "val_length: %u, "
-          "val: %lu, "
-          "keyhash: %lx\n"
-          "Dst len:%lu, "
-          "key_length: %u, "
-          "key: %lu, "
-          "val_length: %u, "
-          "val: %lu, "
-          "keyhash: %lx",
-          j,
-          src_entry->initial_size,
-          src_entry->key_length,
-          *(uint64_t*)src_entry->data,
-          src_entry->val_length,
-          *(uint64_t*)((char*)src_entry->data + 8),
-          *(uint64_t*)&src_entry->keyhash,
-          dst_entry->initial_size,
-          dst_entry->key_length,
-          *(uint64_t*)dst_entry->data,
-          dst_entry->val_length,
-          *(uint64_t*)((char*)dst_entry->data + 8),
-          *(uint64_t*)&dst_entry->keyhash);
-          */
 
         assert((*(uint64_t*) dst_entry->data) == j);
         assert((*(uint64_t*) dst_entry->data) == *(uint64_t*)((char*) dst_entry->data + 8));
@@ -426,6 +406,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
       args[thread_id].key_length     = key_length;
       args[thread_id].value_length   = val_length;
       args[thread_id].op_log_entry   = op_log_entries[thread_id];
+      args[thread_id].op_types       = op_types[thread_id];
       args[thread_id].op_count       = op_count[thread_id];
       args[thread_id].table          = table;
       args[thread_id].log_table      = table->log[thread_id];
@@ -549,7 +530,8 @@ int main(int argc, char* argv[])
     printf("%s CORE_NUM ZIPF-THETA MTH-THRESHOLD\n", argv[0]);
     return EXIT_FAILURE;
   }
-
+  signal(SIGSEGV, handler);
+  DEBUG=false;
   benchmark(atoi(argv[1]), atof(argv[2]), atof(argv[3]));
   return EXIT_SUCCESS;
 }

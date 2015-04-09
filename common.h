@@ -36,6 +36,8 @@ static inline void print_addr(void* addr, char* var) {
 #define fls generic_fls
 #endif
 
+bool DEBUG;
+
 static inline int
 generic_fls(uint32_t x)
 {

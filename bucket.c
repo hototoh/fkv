@@ -93,7 +93,6 @@ search_index_entry(bucket** _bucket, uint64_t keyhash, int* index)
   do {
     index_entry* entries = bkt->entries;
     for(int i = *index; i < BUCKET_ENTRY_SIZE; i++) {
-
       if(match_index_entry_tag(entries[i].tag, keyhash)) {
         // set current index to call next time.
         *index = i; 

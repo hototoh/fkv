@@ -12,6 +12,8 @@
 
 #define SEGREGATED_MAX_DATA_SIZE 1280 // 1472
 
+extern bool DEBUG;
+
 /***** circular_log_entry *****/
 static inline bool
 match_circular_log_entry_key(circular_log_entry* entry1, 
@@ -141,7 +143,8 @@ put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
   uint32_t entry_size = (uint32_t) entry->initial_size;
   void* new_addr = get_segregated_fits_block(sfits, entry_size);
   if (new_addr == NULL) {
-    printf("could not get new addr\n");
+    if (DEBUG)
+      printf("could not get new addr\n");
     return false;
   }
 
@@ -165,7 +168,8 @@ __get_circular_log_entry(circular_log* log_table, bucket* bkt,
   index_entry *i_entry;
   uint64_t keyhash = entry->keyhash;
   circular_log_entry* dst_entry;
-    
+  if(DEBUG)
+    D("[SEARCHING] key:%lu keyhash: %lu", *(uint64_t*)entry->data, entry->keyhash);
   do {
     i_entry = search_index_entry(&bkt, keyhash, &index);
     if (i_entry != NULL) {
@@ -185,9 +189,10 @@ __get_circular_log_entry(circular_log* log_table, bucket* bkt,
     index++;
   } while(i_entry != NULL);
   
-  D("404: NOT FOUND key:%lu keyhash:%lx", 
+  if(DEBUG)
+    D("404: NOT FOUND key:%lu keyhash:%lx", 
     *(uint64_t*)entry->data,
-    *(uint64_t*)&entry->keyhash);
+    entry->keyhash);
 
   return false;
 }
