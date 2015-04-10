@@ -137,11 +137,22 @@ put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
   bucket* bkt = get_entry_bucket(log_table, entry);
   uint64_t version, new_version;
   OPTIMISTIC_LOCK(version, new_version, bkt);
-  __remove_circular_log_entry(log_table, bkt, entry);
+
+  bool res = __remove_circular_log_entry(log_table, bkt, entry);
+  if(DEBUG)
+    printf("%s\n",  res? "remove sucess":"remove fail");
 
   segregated_fits *sfits = log_table->sfits;
   uint32_t entry_size = (uint32_t) entry->initial_size;
+
+  if (DEBUG)
+    printf("get segregated_fits!?\n");
+
   void* new_addr = get_segregated_fits_block(sfits, entry_size);
+
+  if (DEBUG)
+    printf("get segregated_fits!!\n");
+
   if (new_addr == NULL) {
     if (DEBUG)
       printf("could not get new addr\n");
