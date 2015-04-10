@@ -63,6 +63,7 @@ struct proc_arg
   size_t op_count;
   uint8_t *op_types;
   uint8_t *op_log_entry;
+  uint8_t *junks;
 
   size_t num_partitions;
   kv_table* table;
@@ -93,15 +94,16 @@ circular_log_entry_at(uint8_t* entries, size_t key_length, size_t val_length,
 int
 benchmark_proc(void* _args)
 {
-  struct proc_arg* args = (struct proc_arg*) _args;
-  size_t num_threads = args->num_threads;
-  uint8_t thread_id = args->thread_id;
-  const size_t key_length = args->key_length;
-  const size_t val_length = args->value_length;
-  const uint64_t op_count = (uint64_t)args->op_count;
-  const uint8_t *op_types = args->op_types;
-  const uint8_t *op_log_entry = args->op_log_entry;
-  const circular_log* log_table  = args->log_table;
+  struct proc_arg* args         = (struct proc_arg*) _args;
+  size_t num_threads            = args->num_threads;
+  uint8_t thread_id             = args->thread_id;
+  const size_t key_length       = args->key_length;
+  const size_t val_length       = args->value_length;
+  const uint64_t op_count       = (uint64_t)args->op_count;
+  const uint8_t *op_types       = args->op_types;
+  const uint8_t *op_log_entry   = args->op_log_entry;
+  const uint8_t *junks           = args->junks;
+  const circular_log* log_table = args->log_table;
   benchmark_mode_t benchmark_mode = args->benchmark_mode;
 
   /* wait until all threads get ready */
@@ -154,19 +156,22 @@ benchmark_proc(void* _args)
                                                           val_length, i);
         if (DEBUG)
           D("[%d] op_type: %s, key: %lu, "
-          "val: %lu, "
-          "keyhash: %lx\n",
-          thread_id,
-          op_types[i] == 0 ? "GET": "PUT",
-          *(uint64_t*)entry->data,
-          *(uint64_t*)((char*)entry->data + 8),
-          *(uint64_t*)&entry->keyhash);
-         
+            "val: %lu, "
+            "keyhash: %lx\n",
+            thread_id,
+            op_types[i] == 0 ? "GET": "PUT",
+            *(uint64_t*)entry->data,
+            *(uint64_t*)((char*)entry->data + 8),
+            *(uint64_t*)&entry->keyhash);
+        if (DEBUG)
+          printf(" %lu >\n", op_count);
         if (i >= 0) {
+          size_t junk_val = junks[i];
           bool is_get = op_types[i] == 0;
           if (is_get) {
             if(get_circular_log_entry(log_table, entry))
                success_count++;
+            junk += junk_val;
           } else {
             if (put_circular_log_entry(log_table, entry))
               success_count++;
@@ -191,7 +196,7 @@ benchmark_proc(void* _args)
       assert(false);
   }
   
-  //args->junk = junk;
+  args->junk = junk;
   args->success_count = success_count;
   pthread_exit(NULL);
   return 0;
@@ -199,8 +204,9 @@ benchmark_proc(void* _args)
 
 #define KEY_SIZE 8
 #define VAL_SIZE 8
-#define NUM_ITEM (1UL << 18)
-#define BUCKET_SIZE (1UL << 18)
+//#define NUM_ITEM (48UL << 20)
+#define NUM_ITEM (20UL <<  20)
+#define BUCKET_SIZE (1UL << 23)
 void benchmark(int core_num, float zipf_theta, float mth_threshold)
 {
   printf("## Benchmark\n");
@@ -252,6 +258,9 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
   uint64_t *op_count = (uint64_t *)malloc(sizeof(uint64_t) * num_threads);
   assert(op_count);
 
+  uint8_t** junks = (uint8_t*) malloc(sizeof(uint8_t*) * num_threads);
+  assert(junks);
+
   uint8_t **op_types = (uint8_t **)malloc(sizeof(uint8_t *) * num_threads);
   assert(op_types);
 
@@ -267,6 +276,11 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
     mem_allocator* op_log_allocator = create_mem_allocator(filename, data_size);
     op_log_entries[i] = op_log_allocator->addr;
     assert(op_log_entries[i]);    
+
+    //mem_allocator* op_junks_allocator = create_mem_allocator(filename, sizeof(uint8_t) * num_operations);
+    //junks[i] = op_junks_allocator->addr;
+    junks[i] = (uint8_t*) malloc(sizeof(uint8_t) * max_num_operations_per_thread);
+    assert(junks[i]);    
 
     op_types[i] = (uint8_t *)malloc(sizeof(uint8_t *) * max_num_operations_per_thread);
     assert(op_types[i]);
@@ -289,13 +303,14 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
     circular_log_entry* entry = circular_log_entry_at(log_entries, key_length, val_length, i);    
     entry->key_length = key_length;
     entry->val_length = val_length;
-    memcpy((void*)entry->data, &i, key_length);
-    memcpy((void*)((char*)entry->data + key_length), &i, val_length);
+    for(int j = 0; j < key_length; j+= 8) 
+      memcpy((void*)((char*)entry->data + j), &i, 8);
+    for(int j = 0; j < val_length; j+= 8) 
+      memcpy((void*)((char*)entry->data + key_length + j), &i, 8);
     entry->keyhash = CityHash64(entry->data, key_length);
     entry->initial_size = sizeof(circular_log_entry) + key_length + val_length;
   }
   printf("\n");
-
   //####################################################################################
   benchmark_mode_t benchmark_mode;
   for (benchmark_mode = 0; benchmark_mode < BENCHMARK_MODE_MAX; benchmark_mode++) {
@@ -322,7 +337,6 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
         printf("deleting %zu items\n", num_items);
         break;
       case BENCHMARK_MODE_SET_1:
-        DEBUG = true;
         printf("setting 1 item\n");
         break;
       case BENCHMARK_MODE_GET_1:
@@ -383,13 +397,14 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
       size_t thread_id = partition_id;
       if (op_count[thread_id] < max_num_operations_per_thread) {
         op_types[thread_id][op_count[thread_id]] = is_get ? 0 : 1;
+        junks[thread_id][op_count[thread_id]] = is_get ? 0 : 1;
         uint8_t* dst_entry_base = op_log_entries[thread_id];
         circular_log_entry* dst_entry = circular_log_entry_at(dst_entry_base, key_length, val_length, op_count[thread_id]);
         memcpy(dst_entry, src_entry, src_entry->initial_size);
         op_count[thread_id]++;
 
-        assert((*(uint64_t*) dst_entry->data) == j);
-        assert((*(uint64_t*) dst_entry->data) == *(uint64_t*)((char*) dst_entry->data + 8));
+        //assert((*(uint64_t*) dst_entry->data) == j);
+        //assert((*(uint64_t*) dst_entry->data) == *(uint64_t*)((char*) dst_entry->data + dst_entry->key_length));
       } else {
         D("%lu < %lu", op_count[thread_id], max_num_operations_per_thread);
         break;
@@ -408,6 +423,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
       args[thread_id].op_log_entry   = op_log_entries[thread_id];
       args[thread_id].op_types       = op_types[thread_id];
       args[thread_id].op_count       = op_count[thread_id];
+      args[thread_id].junks          = junks[thread_id];
       args[thread_id].table          = table;
       args[thread_id].log_table      = table->log[thread_id];
       args[thread_id].benchmark_mode = benchmark_mode;
@@ -466,7 +482,7 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
       case BENCHMARK_MODE_ADD:
         add_ops = (double)operations / diff;
         printf("add:        %10.2lf Mops\n", add_ops * 0.000001);
-    //mem_diff = mehcached_get_memuse() - mem_start;
+        //mem_diff = mehcached_get_memuse() - mem_start;
         break;
       case BENCHMARK_MODE_SET:
         set_ops = (double)operations / diff;
@@ -494,19 +510,21 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
         break;
       case BENCHMARK_MODE_SET_1:
         set_1_ops = (double)operations / diff;
+        printf("set_1:      %10.2lf Mops\n", set_1_ops * 0.000001);
         break;
       case BENCHMARK_MODE_GET_1:
         get_1_ops = (double)operations / diff;
+        printf("get_1:      %10.2lf Mops\n", get_1_ops * 0.000001);
         break;
       default:
         assert(false);
     }
     
     printf("\n");
+    //if (args[0].junk == 1)
+    for(int i = 0; i < num_threads; i++)
+      printf("junk: %zu (ignore this line)\n", args[i].junk);
   }
-
-  //if (args[0].junk == 1)
-  //  printf("junk: %zu (ignore this line)\n", args[0].junk);
 
   //benchmark_perf_count_free(pc);
   //printf("memory:     %10.2lf MB\n", (double)mem_diff * 0.000001);
@@ -521,6 +539,16 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
   printf("get_1:      %10.2lf Mops\n", get_1_ops * 0.000001);
 
   destroy_kv_table(table);
+  for(int i = 0; i < num_threads; i++) {
+    destroy_mem_allocator(op_log_entries[i]);
+    //destroy_mem_allocator(junks[i]);
+    free(junks[i]);
+    free(op_types[i]);
+  }
+  free(junks);
+  free(op_log_entries);
+  free(op_count);
+  destroy_mem_allocator(log_entries);
 }
 
 int main(int argc, char* argv[])

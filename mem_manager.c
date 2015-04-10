@@ -15,6 +15,9 @@
 
 //#define DEBUG
 
+extern bool DEBUG;
+static uint64_t len = 0;
+
 static inline uint32_t
 BLOCK_SIZE(segregated_fits_list* block)
 {
@@ -97,9 +100,13 @@ get_segregated_fits_block_with_addr(segregated_fits_head* head, void* addr)
   for(pre = &head->head, next = head->head.next;
       next != &head->head;
       pre = next, next = next->next) {
-
     if (addr != (void*) next) continue;
+
+    if(DEBUG) 
+      printf("[%lu]HOge!?\n", len++);
     pre->next = next->next;
+    if(DEBUG)
+      printf("[%lu]HOge!!\n", len++);
     return ;
   }
 
@@ -190,18 +197,21 @@ merge_block_backward(segregated_fits* sfits, void** block_head_ptr)
   void* next_block_head = (void*)((char*)(*block_head_ptr) + block_size);
   
   if(tail_addr < ((uint64_t)next_block_head + BOUNDARY_TAG_SIZE)) {
-    // D("check next blcok is over the end of partition");
+    if(DEBUG)
+      D("check next blcok is over the end of partition");    
     return false;
   }
   
   if((*(uint64_t*)next_block_head) & 1UL) {
-    // D("next block is used");
+    if(DEBUG)
+     D("next block is used");
     return false;
   }
 
   if((*(uint64_t*)next_block_head) == (max_block_size +
                                        SEGREGATED_SIZE_SPACE)) {
-    // D("next block is full size empty block");
+    if(DEBUG)
+       D("next block is full size empty block");
     return false;    
   }
 
@@ -367,7 +377,14 @@ segregated_fits_divide(segregated_fits* sfits, int class_index)
       assert(false);
     }
 
-    while(merge_block_backward(sfits, &block_B_head));
+    while(merge_block_backward(sfits, &block_B_head)) {
+      uint32_t size = (uint32_t)(*(uint64_t*) block_B_head);
+      uint32_t max_size = segregated_fits_class(sfits->len) + SEGREGATED_SIZE_SPACE;
+      if(size < max_size) continue;
+
+      if(!__segregated_fits_reclassing(sfits, (void**) &block_B_head, &size)) ;
+      break;
+    }
         
     buddy_class_index = (int)((*(uint64_t*)block_B_head) >> DIFF_MAGIC) - 3;
     if (buddy_class_index >= 0) {
@@ -395,8 +412,11 @@ get_segregated_fits_block(segregated_fits* sfits, uint32_t data_size)
       return NULL;
     }
   }
-      
+  if(DEBUG)
+    printf("[START]get_segregated_fits_block\n");
   segregated_fits_list* block = __get_segregated_fits_block(head);
+  if(DEBUG)
+    printf("[END]get_segregated_fits_block\n");
   assert(block != head->head.next);
   return (void*) block;
 }
