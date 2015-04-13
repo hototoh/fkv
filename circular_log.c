@@ -83,7 +83,7 @@ destroy_circular_log(circular_log* log_table)
 /**
  * This function must call in Optimistic lock
  */
-static inline bool
+static bool
 __remove_circular_log_entry(circular_log* log_table, bucket* bkt,
                             circular_log_entry* entry)
 {  
@@ -162,8 +162,8 @@ put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
   uint64_t offset = (uint64_t) new_addr - (uint64_t) log_table->base_addr;
   memcpy(new_addr, entry, entry_size);
   insert_index_entry(log_table->bkt_pool, bkt, entry->keyhash, offset);
-
   OPTIMISTIC_UNLOCK(bkt);
+
 
   return true;
 }
@@ -171,7 +171,7 @@ put_circular_log_entry(circular_log* log_table, circular_log_entry* entry)
 /**
  * This function callee must check the version consistency of bucket.
  */
-static inline bool
+static bool
 __get_circular_log_entry(circular_log* log_table, bucket* bkt, 
                          circular_log_entry* entry)
 {

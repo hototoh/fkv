@@ -125,7 +125,7 @@ get_segregated_fits_block_with_addr(segregated_fits_head* head, void* addr)
  *                        |    size        |flag |
  *                        +----------------------+
  */
-static inline bool
+bool
 merge_block_forward(segregated_fits* sfits, void** block_tail_ptr)
 {
   uint32_t max_block_size = segregated_fits_class(sfits->len);
@@ -188,7 +188,7 @@ merge_block_forward(segregated_fits* sfits, void** block_tail_ptr)
  *                        +----------------------+
  */
 
-static inline bool
+bool
 merge_block_backward(segregated_fits* sfits, void** block_head_ptr)
 {
   uint32_t max_block_size = segregated_fits_class(sfits->len);
@@ -308,7 +308,7 @@ segregated_fits_reclassing(segregated_fits* sfits, void** addr_ptr,
   return *size == 0 ? ENOMEM : 0;
 }
 
-static bool
+bool
 __segregated_fits_reclassing(segregated_fits* sfits, 
                              void** block_head_ptr, uint32_t* size)
 {
@@ -322,7 +322,8 @@ __segregated_fits_reclassing(segregated_fits* sfits,
   return true;
 }
 
-static inline segregated_fits_list*
+//static segregated_fits_list*
+segregated_fits_list*
 __get_segregated_fits_block(segregated_fits_head* head)
 {
   // if (segregated_fits_is_empty(head)) return NULL;
@@ -333,7 +334,7 @@ __get_segregated_fits_block(segregated_fits_head* head)
   return block;
 }
 
-static inline bool
+bool
 segregated_fits_divide(segregated_fits* sfits, int class_index)
 {
   uint32_t len = sfits->len;
@@ -461,7 +462,7 @@ free_segregated_fits_block(segregated_fits* sfits, segregated_fits_list* block)
   segregated_fits_insert_block_head(head, block);
 }
 
-static inline void
+void
 dump_segregated_fits_block(segregated_fits_head* head)
 {
   segregated_fits_list *next;

@@ -55,6 +55,22 @@ destroy_segregated_fits(segregated_fits* sfits)
   free(sfits);
 }
 
+bool
+merge_block_forward(segregated_fits* sfits, void** block_tail_ptr);
+
+bool
+merge_block_backward(segregated_fits* sfits, void** block_head_ptr);
+
+bool
+__segregated_fits_reclassing(segregated_fits* sfits, 
+                             void** block_head_ptr, uint32_t* size);
+
+segregated_fits_list*
+__get_segregated_fits_block(segregated_fits_head* head);
+
+bool
+segregated_fits_divide(segregated_fits* sfits, int class_index);
+
 segregated_fits*
 create_segregated_fits(uint32_t max_data_size);
 

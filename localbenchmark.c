@@ -22,6 +22,9 @@
 #include "mem_manager.h"
 #include "circular_log.h"
 
+// #define USE_PREFETCHING
+//#define __BENCHMARK_MODE_SET_1__
+
 static volatile bool running;
 extern bool DEBUG;
 void handler(int sig) {
@@ -313,7 +316,12 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
   printf("\n");
   //####################################################################################
   benchmark_mode_t benchmark_mode;
+#ifdef __BENCHMARK_MODE_SET_1__
+  for (benchmark_mode = BENCHMARK_MODE_SET_1; benchmark_mode < BENCHMARK_MODE_SET_1 + 1; benchmark_mode++) {
+#else    
   for (benchmark_mode = 0; benchmark_mode < BENCHMARK_MODE_MAX; benchmark_mode++) {
+	if (benchmark_mode == BENCHMARK_MODE_SET_1) continue;
+#endif    
     switch (benchmark_mode) {
       case BENCHMARK_MODE_ADD:
         printf("adding %zu items\n", num_items);

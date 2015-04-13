@@ -50,7 +50,7 @@ error0:
   return NULL;
 }
 
-static inline bucket*
+static bucket*
 next_empty_spare_bucket(bucket_pool* bkt_pool)
 {
   bucket* bucket;
@@ -65,7 +65,7 @@ next_empty_spare_bucket(bucket_pool* bkt_pool)
   return NULL;
 }
 
-static inline bucket*
+static bucket*
 next_spare_bucket(bucket* bkt)
 {
   if(bkt->offset == 0)

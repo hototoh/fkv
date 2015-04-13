@@ -53,6 +53,7 @@ typedef struct circular_log_entry {
   uint8_t data[0];
 } circular_log_entry;
 
+// XXX fix memcmp
 static inline bool
 equal_circular_log_entry_key(circular_log_entry* entry1, 
                             circular_log_entry* entry2)
@@ -61,6 +62,7 @@ equal_circular_log_entry_key(circular_log_entry* entry1,
           memcmp(entry1->data, entry2->data, entry1->key_length) == 0);
 }
 
+// XXX fix memcmp
 static inline bool
 equal_circular_log_entry(circular_log_entry* entry1, 
                          circular_log_entry* entry2)

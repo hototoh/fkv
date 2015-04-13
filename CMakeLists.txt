@@ -3,10 +3,10 @@ project(fkv)
 
 add_definitions(-pthread)
 #add_definitions(-g -Wall -Wconversion -Woverflow)
-add_definitions(-g )
-add_definitions(-O3)
+add_definitions(-g)
+add_definitions(-O2)
 add_definitions(-msse4.2)
-#add_definitions(-march=corei7)
+add_definitions(-march=corei7)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c99")
