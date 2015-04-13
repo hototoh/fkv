@@ -536,16 +536,21 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
 
   //benchmark_perf_count_free(pc);
   //printf("memory:     %10.2lf MB\n", (double)mem_diff * 0.000001);
-  printf("add:        %10.2lf Mops\n", add_ops * 0.000001);
-  printf("set:        %10.2lf Mops\n", set_ops * 0.000001);
-  printf("get_hit:    %10.2lf Mops\n", get_hit_ops * 0.000001);
-  printf("get_miss:   %10.2lf Mops\n", get_miss_ops * 0.000001);
-  printf("get_set_95: %10.2lf Mops\n", get_set_95_ops * 0.000001);
-  printf("get_set_50: %10.2lf Mops\n", get_set_50_ops * 0.000001);
-  printf("delete:     %10.2lf Mops\n", delete_ops * 0.000001);
-  printf("set_1:      %10.2lf Mops\n", set_1_ops * 0.000001);
-  printf("get_1:      %10.2lf Mops\n", get_1_ops * 0.000001);
-
+  char res_filename[128];
+  sprintf(res_filename, "result.%u", time(NULL));
+  FILE* fp = fopen(res_filename, "w+");
+  if (fp == NULL) fp = stdout;
+  fprintf(fp, "add:        %10.2lf Mops\n", add_ops * 0.000001);
+  fprintf(fp, "set:        %10.2lf Mops\n", set_ops * 0.000001);
+  fprintf(fp, "get_hit:    %10.2lf Mops\n", get_hit_ops * 0.000001);
+  fprintf(fp, "get_miss:   %10.2lf Mops\n", get_miss_ops * 0.000001);
+  fprintf(fp, "get_set_95: %10.2lf Mops\n", get_set_95_ops * 0.000001);
+  fprintf(fp, "get_set_50: %10.2lf Mops\n", get_set_50_ops * 0.000001);
+  fprintf(fp, "delete:     %10.2lf Mops\n", delete_ops * 0.000001);
+  fprintf(fp, "set_1:      %10.2lf Mops\n", set_1_ops * 0.000001);
+  fprintf(fp, "get_1:      %10.2lf Mops\n", get_1_ops * 0.000001);
+  if(fp != stdout) fclose(fp);
+  
   destroy_kv_table(table);
   for(int i = 0; i < num_threads; i++) {
     destroy_mem_allocator(op_log_entries[i]);
