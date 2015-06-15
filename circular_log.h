@@ -5,11 +5,14 @@
 #include <stdbool.h>
 
 #include "common.h"
+#include "util.h"
 #include "shm.h"
 #include "bucket.h"
 #include "mem_manager.h"
 
-#define CIRCULAR_LOG_FILE "/mnt/hugetlbfs/circular_log"
+//#define USE_FUTIL
+
+#define CIRCULAR_LOG_FILE "/mnt/huge/circular_log"
 #define CIRCULAR_LOG_SIZE (1ULL << 30)
 //#define CIRCULAR_LOG_SIZE (1ULL << 20)
 
@@ -53,13 +56,17 @@ typedef struct circular_log_entry {
   uint8_t data[0];
 } circular_log_entry;
 
-// XXX fix memcmp
 static inline bool
 equal_circular_log_entry_key(circular_log_entry* entry1, 
                             circular_log_entry* entry2)
 {
+#ifdef USE_FUTIL
+  return (entry1->key_length == entry2->key_length &&
+          fmemcmp(entry1->data, entry2->data, entry1->key_length) == 0);
+#else
   return (entry1->key_length == entry2->key_length &&
           memcmp(entry1->data, entry2->data, entry1->key_length) == 0);
+#endif
 }
 
 // XXX fix memcmp
@@ -69,8 +76,13 @@ equal_circular_log_entry(circular_log_entry* entry1,
 {
   uint64_t data1_length = entry1->key_length + entry1->val_length;
   uint64_t data2_length = entry2->key_length + entry2->val_length;
+#ifdef USE_FUTIL
+  return (data1_length == data2_length && 
+          fmemcmp(entry1->data, entry2->data, data1_length) == 0);
+#else
   return (data1_length == data2_length && 
           memcmp(entry1->data, entry2->data, data1_length) == 0);
+#endif
 }
 
 static void

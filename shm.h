@@ -5,7 +5,7 @@
 #include <linux/limits.h> // PATH_MAX
 #include <stdlib.h> 
 
-#define HUGEPAGE_PREFIX "/mnt/hugetlbfs"
+#define HUGEPAGE_PREFIX "/mnt/huge"
 
 typedef struct mem_allocator {
   char filename[PATH_MAX];

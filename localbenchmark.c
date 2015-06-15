@@ -208,7 +208,7 @@ benchmark_proc(void* _args)
 #define KEY_SIZE 8
 #define VAL_SIZE 8
 //#define NUM_ITEM (48UL << 20)
-#define NUM_ITEM (20UL <<  20)
+#define NUM_ITEM (48UL <<  20)
 #define BUCKET_SIZE (1UL << 23)
 void benchmark(int core_num, float zipf_theta, float mth_threshold)
 {
@@ -538,7 +538,8 @@ void benchmark(int core_num, float zipf_theta, float mth_threshold)
   //printf("memory:     %10.2lf MB\n", (double)mem_diff * 0.000001);
   char res_filename[128];
   sprintf(res_filename, "result.%u", time(NULL));
-  FILE* fp = fopen(res_filename, "w+");
+  //FILE* fp = fopen(res_filename, "w+");
+  FILE* fp = stdout;
   if (fp == NULL) fp = stdout;
   fprintf(fp, "add:        %10.2lf Mops\n", add_ops * 0.000001);
   fprintf(fp, "set:        %10.2lf Mops\n", set_ops * 0.000001);

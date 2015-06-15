@@ -9,7 +9,7 @@
 #include "common.h"
 #include "shm.h"
 
-#define FILENAME "/mnt/hugetlbfs/test_mem_alloc"
+#define FILENAME "/mnt/huge/test_mem_alloc"
 #define MM_SIZE (256UL*1024*1024)
 
 void write_data(mem_allocator* allocator) {

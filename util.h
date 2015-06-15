@@ -54,4 +54,10 @@ rand_string_with_max(char* ptr, uint32_t max)
   return len;
 }
 
+int
+fmemcmp(const char* _p, const char* _pp, size_t len);
+
+void
+fmemcpy(char* _p, char* _pp, size_t len);
+
 #endif
