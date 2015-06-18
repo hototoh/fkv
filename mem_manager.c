@@ -165,7 +165,7 @@ merge_block_forward(segregated_fits* sfits, void** block_tail_ptr)
   index = index >= (int) sfits->len ? sfits->len - 1 : index;
   if (index >= 0) {
     segregated_fits_head* head = &sfits->heads[index];
-    segregated_fits* list_ptr = (char*) previous_head + BOUNDARY_TAG_SIZE;
+    segregated_fits* list_ptr = (segregated_fits*)((char*)previous_head + BOUNDARY_TAG_SIZE);
     
     get_segregated_fits_block_with_addr(head, (void*) list_ptr);
   }
