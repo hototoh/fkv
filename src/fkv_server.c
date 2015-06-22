@@ -1,5 +1,3 @@
-/* This file is copied from https://github.com/eunyoung14/mtcp and modified. */
-/* TODO : rte_malloc => change to rte_mempool_get */
 #define _LARGEFILE64_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,10 +18,8 @@
 #include <mtcp_api.h>
 #include <mtcp_epoll.h>
 
-#include <rte_mempool.h>
-#include <rte_malloc.h>
-
 #include "cpu.h"
+#include "http_parsing.h"
 #include "debug.h"
 
 #define MAX_FLOW_NUM  (10000)
@@ -32,6 +28,9 @@
 #define SNDBUF_SIZE (8*1024)
 
 #define MAX_EVENTS (MAX_FLOW_NUM * 3)
+
+#define HTTP_HEADER_LEN 1024
+#define URL_LEN 128
 
 #define MAX_CPUS 16
 #define MAX_FILES 30
@@ -54,14 +53,27 @@
 #define HT_SUPPORT FALSE
 
 /*----------------------------------------------------------------------------*/
+struct file_cache
+{
+	char name[128];
+	char fullname[256];
+	uint64_t size;
+	char *file;
+};
+/*----------------------------------------------------------------------------*/
 struct server_vars
 {
+	char request[HTTP_HEADER_LEN];
 	int recv_len;
 	int request_len;
 	long int total_read, total_sent;
 	uint8_t done;
 	uint8_t rspheader_sent;
 	uint8_t keep_alive;
+
+	int fidx;						// file cache index
+	char fname[128];				// file name
+	long int fsize;					// file size
 };
 /*----------------------------------------------------------------------------*/
 struct thread_context
@@ -69,7 +81,6 @@ struct thread_context
 	mctx_t mctx;
 	int ep;
 	struct server_vars *svars;
-  struct rte_mempool *mpool;
 };
 /*----------------------------------------------------------------------------*/
 static int num_cores;
@@ -77,7 +88,27 @@ static int core_limit;
 static pthread_t app_thread[MAX_CPUS];
 static int done[MAX_CPUS];
 /*----------------------------------------------------------------------------*/
+const char *www_main;
+static struct file_cache fcache[MAX_FILES];
+static int nfiles;
+/*----------------------------------------------------------------------------*/
 static int finished;
+/*----------------------------------------------------------------------------*/
+static char *
+StatusCodeToString(int scode)
+{
+	switch (scode) {
+		case 200:
+			return "OK";
+			break;
+
+		case 404:
+			return "Not Found";
+			break;
+	}
+
+	return NULL;
+}
 /*----------------------------------------------------------------------------*/
 void
 CleanServerVariable(struct server_vars *sv)
@@ -112,13 +143,12 @@ SendUntilAvailable(struct thread_context *ctx, int sockid, struct server_vars *s
 	sent = 0;
 	ret = 1;
 	while (ret > 0) {
-    // XXX fix
 		len = MIN(SNDBUF_SIZE, sv->fsize - sv->total_sent);
 		if (len <= 0) {
 			break;
 		}
 		ret = mtcp_write(ctx->mctx, sockid,  
-				fcachen[sv->fidx].file + sv->total_sent, len);
+				fcache[sv->fidx].file + sv->total_sent, len);
 		if (ret < 0) {
 			TRACE_APP("Connection closed with client.\n");
 			break;
@@ -128,7 +158,6 @@ SendUntilAvailable(struct thread_context *ctx, int sockid, struct server_vars *s
 		sv->total_sent += ret;
 	}
 
-  /* if all data transfered */
 	if (sv->total_sent >= fcache[sv->fidx].size) {
 		struct mtcp_epoll_event ev;
 		sv->done = TRUE;
@@ -154,6 +183,10 @@ static int
 HandleReadEvent(struct thread_context *ctx, int sockid, struct server_vars *sv)
 {
 	struct mtcp_epoll_event ev;
+	char buf[HTTP_HEADER_LEN];
+	char url[URL_LEN];
+	char response[HTTP_HEADER_LEN];
+	int scode;						// status code
 	time_t t_now;
 	char t_str[128];
 	char keepalive_str[128];
@@ -168,22 +201,47 @@ HandleReadEvent(struct thread_context *ctx, int sockid, struct server_vars *sv)
 		return rd;
 	}
 	memcpy(sv->request + sv->recv_len, 
-         (char *)buf, MIN(rd, HTTP_HEADER_LEN - sv->recv_len));
+			(char *)buf, MIN(rd, HTTP_HEADER_LEN - sv->recv_len));
 	sv->recv_len += rd;
+	//sv->request[rd] = '\0';
+	//fprintf(stderr, "HTTP Request: \n%s", request);
 	sv->request_len = find_http_header(sv->request, sv->recv_len);
-
 	if (sv->request_len <= 0) {
 		TRACE_ERROR("Socket %d: Failed to parse HTTP request header.\n"
-                "read bytes: %d, recv_len: %d, "
-                "request_len: %d, strlen: %ld, request: \n%s\n", 
-                sockid, rd, sv->recv_len, 
-                sv->request_len, strlen(sv->request), sv->request);
+				"read bytes: %d, recv_len: %d, "
+				"request_len: %d, strlen: %ld, request: \n%s\n", 
+				sockid, rd, sv->recv_len, 
+				sv->request_len, strlen(sv->request), sv->request);
 		return rd;
 	}
 
 	http_get_url(sv->request, sv->request_len, url, URL_LEN);
+	TRACE_APP("Socket %d URL: %s\n", sockid, url);
+	sprintf(sv->fname, "%s%s", www_main, url);
+	TRACE_APP("Socket %d File name: %s\n", sockid, sv->fname);
 
-	/* Find value in cache */
+	sv->keep_alive = FALSE;
+	if (http_header_str_val(sv->request, "Connection: ", 
+				strlen("Connection: "), keepalive_str, 128)) {	
+		if (strstr(keepalive_str, "Keep-Alive")) {
+			sv->keep_alive = TRUE;
+		} else if (strstr(keepalive_str, "Close")) {
+			sv->keep_alive = FALSE;
+		}
+	}
+
+	/* Find file in cache */
+	scode = 404;
+	for (i = 0; i < nfiles; i++) {
+		if (strcmp(sv->fname, fcache[i].fullname) == 0) {
+			sv->fsize = fcache[i].size;
+			sv->fidx = i;
+			scode = 200;
+			break;
+		}
+	}
+	TRACE_APP("Socket %d File size: %ld (%ldMB)\n", 
+			sockid, sv->fsize, sv->fsize / 1024 / 1024);
 
 	/* Response header handling */
 	time(&t_now);
@@ -205,9 +263,8 @@ HandleReadEvent(struct thread_context *ctx, int sockid, struct server_vars *sv)
 	TRACE_APP("Socket %d Sent response header: try: %d, sent: %d\n", 
 			sockid, len, sent);
 	assert(sent == len);
-	sv->rspheader_sent = TRUE; /* mark to sent header */
+	sv->rspheader_sent = TRUE;
 
-  /* */
 	ev.events = MTCP_EPOLLIN | MTCP_EPOLLOUT;
 	ev.data.sockid = sockid;
 	mtcp_epoll_ctl(ctx->mctx, ctx->ep, MTCP_EPOLL_CTL_MOD, sockid, &ev);
@@ -264,23 +321,12 @@ InitializeServerThread(int core)
 	mtcp_core_affinitize(core);
 #endif /* HT_SUPPORT */
 
-	ctx = (struct thread_context *)
-        rte_malloc("thread_context",
-                   sizeof(struct thread_context), 0);                   
+	ctx = (struct thread_context *)calloc(1, sizeof(struct thread_context));
 	if (!ctx) {
 		TRACE_ERROR("Failed to create thread context!\n");
 		return NULL;
 	}
 
-  /* create memory pool for memory allocation */
-  /*
-  struct rte_mempool *mpool = rte_mempool_create();
-  if (mpool != NULL) {
-		TRACE_ERROR("Failed to create memory pool!\n");
-		return NULL;
-  }
-  ctx->mpool = mpool;
-  */
 	/* create mtcp context: this will spawn an mtcp thread */
 	ctx->mctx = mtcp_create_context(core);
 	if (!ctx->mctx) {
@@ -297,9 +343,7 @@ InitializeServerThread(int core)
 
 	/* allocate memory for server variables */
 	ctx->svars = (struct server_vars *)
-               rte_malloc("server_vars",
-                          MAX_FLOW_NUM * sizeof(struct server_vars),
-                          0);
+			calloc(MAX_FLOW_NUM, sizeof(struct server_vars));
 	if (!ctx->svars) {
 		TRACE_ERROR("Failed to create server_vars struct!\n");
 		return NULL;
@@ -377,9 +421,7 @@ RunServerThread(void *arg)
 	ep = ctx->ep;
 
 	events = (struct mtcp_epoll_event *)
-           rte_malloc("mtcp_epool_event", 
-                      MAX_EVENTS * sizeof(struct mtcp_epoll_event),
-                      0);
+			calloc(MAX_EVENTS, sizeof(struct mtcp_epoll_event));
 	if (!events) {
 		TRACE_ERROR("Failed to create event struct!\n");
 		exit(-1);
@@ -401,13 +443,12 @@ RunServerThread(void *arg)
 
 		do_accept = FALSE;
 		for (i = 0; i < nevents; i++) {
-      //struct mtcp_epoll_event *event = &evets[i];
 
-			if (events[i].data.sockid == listener) { /* when Accept */
+			if (events[i].data.sockid == listener) {
 				/* if the event is for the listener, accept connection */
 				do_accept = TRUE;
 
-			} else if (events[i].events & MTCP_EPOLLERR) { /* when Error */
+			} else if (events[i].events & MTCP_EPOLLERR) {
 				int err;
 				socklen_t len = sizeof(err);
 
@@ -426,7 +467,7 @@ RunServerThread(void *arg)
 				CloseConnection(ctx, events[i].data.sockid, 
 						&ctx->svars[events[i].data.sockid]);
 
-			} else if (events[i].events & MTCP_EPOLLIN) { /* when can receive */
+			} else if (events[i].events & MTCP_EPOLLIN) {
 				ret = HandleReadEvent(ctx, events[i].data.sockid, 
 						&ctx->svars[events[i].data.sockid]);
 
@@ -442,16 +483,16 @@ RunServerThread(void *arg)
 					}
 				}
 
-			} else if (events[i].events & MTCP_EPOLLOUT) { /* when can send */
+			} else if (events[i].events & MTCP_EPOLLOUT) {
 				struct server_vars *sv = &ctx->svars[events[i].data.sockid];
-				if (sv->rspheader_sent) { 
+				if (sv->rspheader_sent) {
 					SendUntilAvailable(ctx, events[i].data.sockid, sv);
-				} else { /* has not receive header yet. */
+				} else {
 					TRACE_APP("Socket %d: Response header not sent yet.\n", 
-                    events[i].data.sockid);
+							events[i].data.sockid);
 				}
 
-			} else { /* when other */
+			} else {
 				assert(0);
 			}
 		}
@@ -507,7 +548,16 @@ main(int argc, char **argv)
 	core_limit = num_cores;
 
 	if (argc < 2) {
-		TRACE_ERROR("$%s \n", argv[0]);
+		TRACE_ERROR("$%s directory_to_service\n", argv[0]);
+		return FALSE;
+	}
+
+	/* open the directory to serve */
+	www_main = argv[1];
+	dir = opendir(www_main);
+	if (!dir) {
+		TRACE_ERROR("Failed to open %s.\n", www_main);
+		perror("opendir");
 		return FALSE;
 	}
 
@@ -521,11 +571,61 @@ main(int argc, char **argv)
 			}
 		}
 	}
-  core_limit --;
+    core_limit --;
+	nfiles = 0;
+	while ((ent = readdir(dir)) != NULL) {
+		if (strcmp(ent->d_name, ".") == 0)
+			continue;
+		else if (strcmp(ent->d_name, "..") == 0)
+			continue;
+
+		strcpy(fcache[nfiles].name, ent->d_name);
+		sprintf(fcache[nfiles].fullname, "%s/%s", www_main, ent->d_name);
+		fd = open(fcache[nfiles].fullname, O_RDONLY);
+		if (fd < 0) {
+			perror("open");
+			continue;
+		} else {
+			fcache[nfiles].size = lseek64(fd, 0, SEEK_END);
+			lseek64(fd, 0, SEEK_SET);
+		}
+
+		fcache[nfiles].file = (char *)malloc(fcache[nfiles].size);
+		if (!fcache[nfiles].file) {
+			TRACE_ERROR("Failed to allocate memory for file %s\n", 
+					fcache[nfiles].name);
+			perror("malloc");
+			continue;
+		}
+
+		TRACE_INFO("Reading %s (%lu bytes)\n", 
+				fcache[nfiles].name, fcache[nfiles].size);
+		total_read = 0;
+		while (1) {
+			ret = read(fd, fcache[nfiles].file + total_read, 
+					fcache[nfiles].size - total_read);
+			if (ret < 0) {
+				break;
+			} else if (ret == 0) {
+				break;
+			}
+			total_read += ret;
+		}
+		if (total_read < fcache[nfiles].size) {
+			free(fcache[nfiles].file);
+			continue;
+		}
+		close(fd);
+		nfiles++;
+
+		if (nfiles >= MAX_FILES)
+			break;
+	}
+
 	finished = 0;
 
 	/* initialize mtcp */
-	ret = mtcp_init("mtcp_server.conf");
+	ret = mtcp_init("epserver.conf");
 	if (ret) {
 		TRACE_ERROR("Failed to initialize mtcp\n");
 		exit(EXIT_FAILURE);
@@ -534,6 +634,7 @@ main(int argc, char **argv)
 	mtcp_register_signal(SIGINT, SignalHandler);
 
 	TRACE_INFO("Application initialization finished.\n");
+
 	for (i = 0; i < core_limit; i++) {
 		cores[i] = i;
 		done[i] = FALSE;
