@@ -1,6 +1,6 @@
 ## TODO : remove hardcoding for mtcp.
 
-subdirs := cityhash src
+subdirs := cityhash src 
 
 .PHONY: all clean $(subdirs)
 

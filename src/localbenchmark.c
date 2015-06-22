@@ -17,7 +17,7 @@
 #include <execinfo.h>
 
 #include "common.h"
-#include "city.h"
+#include <city.h>
 #include "zipf.h"
 #include "mem_manager.h"
 #include "circular_log.h"
